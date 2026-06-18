@@ -1,9 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import useSWR from "swr";
-import { getBranches, getBackupsStats, getMachines } from "@/lib/api";
+import { getBranches, getBackupsStats, getMachines, getBackups, type Backup } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, Database, Monitor, HardDrive } from "lucide-react";
+import { Building2, Database, Monitor, HardDrive, TrendingUp, Receipt, Store } from "lucide-react";
 
 interface SubadminStatsProps {
   licenseKey: string;
@@ -15,6 +16,32 @@ function formatBytes(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("cs-CZ", {
+    style: "currency",
+    currency: "CZK",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+// Czech grammar: "z 1 prodejny" vs "z 5 prodejen"
+function prodejnyLabel(n: number): string {
+  return n === 1 ? "prodejny" : "prodejen";
+}
+
+// Czech grammar: 1 transakce, 2-4 transakce, 0/5+ transakcí
+function transakceLabel(n: number): string {
+  return n >= 1 && n <= 4 ? "transakce" : "transakcí";
+}
+
+// Shape of metadata_json on an `uzaverka` (daily closure) backup
+interface UzaverkaMeta {
+  close_id?: number;
+  tx_count?: number;
+  close_date?: string;
+  total_revenue?: number;
 }
 
 export function SubadminStats({ licenseKey }: SubadminStatsProps) {
@@ -33,6 +60,52 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
     () => getMachines(licenseKey)
   );
 
+  // Today's turnover — only `uzaverka` (daily closure) backups count; `manual`
+  // backups are just full DB snapshots, not closures, so they're ignored.
+  const { data: turnoverBackups } = useSWR(
+    ["subadmin-turnover-today", licenseKey],
+    () => getBackups({ licenseKey, kind: "uzaverka", limit: 200 })
+  );
+
+  // "Today" in the shops' timezone (closure dates are local Czech dates).
+  const today = useMemo(
+    () =>
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Prague",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date()),
+    []
+  );
+
+  const todayTurnover = useMemo(() => {
+    const backups = turnoverBackups?.backups ?? [];
+    // Keep only the most recent closure per branch dated today (treats uzaverka
+    // as the cumulative end-of-day Z-report, avoiding double-counting re-closes).
+    const latestPerBranch = new Map<number, Backup>();
+    for (const b of backups) {
+      if (b.kind !== "uzaverka") continue;
+      const meta = b.metadata_json as UzaverkaMeta | null;
+      if (!meta || meta.close_date !== today) continue;
+      const existing = latestPerBranch.get(b.branch_id);
+      if (
+        !existing ||
+        new Date(b.uploaded_at).getTime() > new Date(existing.uploaded_at).getTime()
+      ) {
+        latestPerBranch.set(b.branch_id, b);
+      }
+    }
+    let revenue = 0;
+    let transactions = 0;
+    for (const b of latestPerBranch.values()) {
+      const meta = b.metadata_json as UzaverkaMeta;
+      revenue += Number(meta.total_revenue) || 0;
+      transactions += Number(meta.tx_count) || 0;
+    }
+    return { revenue, transactions, branches: latestPerBranch.size };
+  }, [turnoverBackups, today]);
+
   const activeBranches = branchesData?.branches?.filter(b => !b.archived_at).length || 0;
   const totalBranches = branchesData?.branches?.length || 0;
   const totalBackups = backupsData?.totals?.total_count || 0;
@@ -41,6 +114,30 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
 
   return (
     <div className="space-y-6">
+      {/* Today's turnover */}
+      <Card className="border-border bg-card">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Dnešní tržba</CardTitle>
+          <TrendingUp className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-4xl font-bold tracking-tight">
+            {formatCurrency(todayTurnover.revenue)}
+          </div>
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Store className="h-3.5 w-3.5" />
+            Z {todayTurnover.branches} {prodejnyLabel(todayTurnover.branches)}
+          </p>
+          <div className="mt-4 flex items-center gap-2 text-sm">
+            <Receipt className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">{todayTurnover.transactions}</span>
+            <span className="text-muted-foreground">
+              {transakceLabel(todayTurnover.transactions)} dnes
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

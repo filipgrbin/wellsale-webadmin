@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import { getMachines, deleteMachine, type Machine } from "@/lib/api";
+import { getMachines, deleteMachine, getBranches, type Machine } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -34,6 +34,7 @@ import {
   Search,
   Monitor,
   Copy,
+  Fingerprint,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
@@ -53,12 +54,21 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
     ["machines", licenseKey],
     () => getMachines(licenseKey)
   );
+  // HWID lives on the branch, so map each machine's branch_id -> branch hwid.
+  // Include archived branches so machines on them still resolve.
+  const { data: branchesData } = useSWR(
+    ["machines-branches", licenseKey],
+    () => getBranches(licenseKey, true)
+  );
   const [search, setSearch] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const machines = data?.machines || [];
+  const branchHwidById = new Map(
+    (branchesData?.branches || []).map((b) => [String(b.id), b.hwid] as const)
+  );
   const filteredMachines = machines.filter(
     (m) =>
       m.hostname.toLowerCase().includes(search.toLowerCase()) ||
@@ -124,6 +134,12 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
               <TableHead>Install ID</TableHead>
               {showLicenseColumn && <TableHead>Licence</TableHead>}
               <TableHead>Branch ID</TableHead>
+              <TableHead>
+                <span className="flex items-center gap-1.5">
+                  <Fingerprint className="h-4 w-4" />
+                  HWID
+                </span>
+              </TableHead>
               <TableHead>IP adresa</TableHead>
               <TableHead>Poslední aktivita</TableHead>
               <TableHead className="w-[50px]"></TableHead>
@@ -132,14 +148,14 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={showLicenseColumn ? 8 : 7} className="text-center py-8">
+                <TableCell colSpan={showLicenseColumn ? 9 : 8} className="text-center py-8">
                   <RefreshCw className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
                 </TableCell>
               </TableRow>
             ) : filteredMachines.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={showLicenseColumn ? 8 : 7}
+                  colSpan={showLicenseColumn ? 9 : 8}
                   className="text-center py-8 text-muted-foreground"
                 >
                   Žádné stroje nenalezeny
@@ -178,6 +194,34 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
                   )}
                   <TableCell className="text-muted-foreground">
                     {machine.branch_id || "—"}
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const hwid =
+                        machine.branch_id != null
+                          ? branchHwidById.get(String(machine.branch_id))
+                          : null;
+                      return hwid ? (
+                        <div className="flex items-center gap-2">
+                          <code
+                            className="font-mono text-xs bg-secondary px-2 py-1 rounded truncate max-w-[120px]"
+                            title={hwid}
+                          >
+                            {hwid}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => copyToClipboard(hwid)}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-sm">
                     {machine.last_seen_ip || "—"}
