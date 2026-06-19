@@ -140,7 +140,7 @@ export function LicenseDetail({ license, onBack }: LicenseDetailProps) {
                 <div>
                   <p className="text-sm text-muted-foreground">Typ licence</p>
                   <p className="font-medium">
-                    {license.license_type === "permanent" ? "Permanentní" : "Dočasná"}
+                    {license.license_type === "lifetime" ? "Permanentní" : "Dočasná"}
                   </p>
                 </div>
               </div>
@@ -151,7 +151,7 @@ export function LicenseDetail({ license, onBack }: LicenseDetailProps) {
                 <div>
                   <p className="text-sm text-muted-foreground">Platnost do</p>
                   <p className="font-medium">
-                    {license.license_type === "permanent"
+                    {license.license_type === "lifetime"
                       ? "Neomezená"
                       : formatFullDate(license.valid_until)}
                   </p>

@@ -39,7 +39,7 @@ export interface License {
   license_key: string;
   owner_name: string;
   owner_email: string;
-  license_type: "permanent" | "temporary";
+  license_type: "lifetime" | "temporary";
   valid_until: string | null;
   max_machines: number;
   revoked: boolean;
@@ -93,7 +93,7 @@ export async function createLicense(data: {
   licenseKey?: string;
   ownerName: string;
   ownerEmail: string;
-  type: "permanent" | "temporary";
+  type: "lifetime" | "temporary";
   validUntil?: string;
   maxMachines: number;
   notes?: string;

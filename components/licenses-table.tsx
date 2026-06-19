@@ -200,7 +200,7 @@ export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license:
       licenseKey: license.license_key,
       ownerName: license.owner_name,
       ownerEmail: license.owner_email,
-      type: license.license_type as "permanent" | "temporary",
+      type: license.license_type as "lifetime" | "temporary",
       validUntil: license.valid_until ? license.valid_until.split("T")[0] : "",
       maxMachines: license.max_machines,
       notes: license.notes || "",
@@ -302,14 +302,14 @@ export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license:
                     <Select
                       value={formData.type}
                       onValueChange={(v) =>
-                        setFormData({ ...formData, type: v as "permanent" | "temporary" })
+                        setFormData({ ...formData, type: v as "lifetime" | "temporary" })
                       }
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="permanent">Permanentní</SelectItem>
+                        <SelectItem value="lifetime">Permanentní</SelectItem>
                         <SelectItem value="temporary">Dočasná</SelectItem>
                       </SelectContent>
                     </Select>
@@ -436,8 +436,8 @@ export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license:
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={license.license_type === "permanent" ? "default" : "secondary"}>
-                        {license.license_type === "permanent" ? "Permanentní" : "Dočasná"}
+                      <Badge variant={license.license_type === "lifetime" ? "default" : "secondary"}>
+                        {license.license_type === "lifetime" ? "Permanentní" : "Dočasná"}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -579,14 +579,14 @@ export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license:
                 <Select
                   value={formData.type}
                   onValueChange={(v) =>
-                    setFormData({ ...formData, type: v as "permanent" | "temporary" })
+                    setFormData({ ...formData, type: v as "lifetime" | "temporary" })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="permanent">Permanentní</SelectItem>
+                    <SelectItem value="lifetime">Permanentní</SelectItem>
                     <SelectItem value="temporary">Dočasná</SelectItem>
                   </SelectContent>
                 </Select>

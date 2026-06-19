@@ -1,19 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const publicRoutes = ["/login", "/api/auth/login"];
-
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  
-  // Allow public routes and the subadmin section
-  if (publicRoutes.includes(pathname) || pathname.startsWith("/subadmin")) {
+  const isAdminAuthed = request.cookies.get("auth")?.value === "true";
+
+  // Subadmin area is fully independent (localStorage-based session). It is never
+  // gated by the admin cookie, and a subadmin session never grants admin access.
+  if (pathname.startsWith("/subadmin")) {
     return NextResponse.next();
   }
 
-  // Check for auth cookie
-  const authCookie = request.cookies.get("auth")?.value;
+  // The admin login API must always be reachable.
+  if (pathname === "/api/auth/login") {
+    return NextResponse.next();
+  }
 
-  if (!authCookie) {
+  // Admin login page: if already authenticated as admin, skip straight to the
+  // dashboard. A subadmin (no admin cookie) won't match this and still sees the
+  // password prompt — so a subadmin session can't slip into the admin area.
+  if (pathname === "/login") {
+    if (isAdminAuthed) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Everything else requires a valid admin cookie.
+  if (!isAdminAuthed) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
