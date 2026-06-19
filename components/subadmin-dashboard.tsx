@@ -126,6 +126,16 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6 m-0">
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-primary/10">
+                <KeyRound className="h-5 w-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Spravovaná licence</p>
+                <p className="font-mono font-semibold truncate">{session.licenseKey}</p>
+                <p className="text-xs text-muted-foreground truncate">{session.ownerName}</p>
+              </div>
+            </div>
             <SubadminStats licenseKey={session.licenseKey} />
           </TabsContent>
 

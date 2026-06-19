@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import { getMachines, deleteMachine, getBranches, updateMachine, type Machine } from "@/lib/api";
+import { getMachines, deleteMachine, getBranches, updateMachine, createMachine, type Machine } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Plus,
   MoreHorizontal,
   Trash2,
   RefreshCw,
@@ -73,6 +74,8 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ install_id: "", hostname: "", branch_id: "" });
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({ license_key: "", install_id: "", hostname: "", branch_id: "" });
   const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -97,6 +100,28 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
       setDeleteOpen(false);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Chyba při mazání stroje");
+    }
+    setIsSubmitting(false);
+  };
+
+  const openCreate = () => {
+    setCreateForm({ license_key: licenseKey || "", install_id: "", hostname: "", branch_id: "" });
+    setCreateOpen(true);
+  };
+
+  const handleCreate = async () => {
+    setIsSubmitting(true);
+    try {
+      await createMachine({
+        license_key: createForm.license_key.trim(),
+        install_id: createForm.install_id.trim(),
+        hostname: createForm.hostname.trim() || undefined,
+        branch_id: createForm.branch_id ? Number(createForm.branch_id) : null,
+      });
+      mutate(["machines", licenseKey]);
+      setCreateOpen(false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Chyba při vytváření stroje");
     }
     setIsSubmitting(false);
   };
@@ -152,14 +177,20 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
             className="pl-9"
           />
         </div>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => mutate(["machines", licenseKey])}
-          disabled={isLoading}
-        >
-          <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nový stroj
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => mutate(["machines", licenseKey])}
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-lg border border-border bg-card">
@@ -305,6 +336,86 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
           </TableBody>
         </Table>
       </div>
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nový stroj</DialogTitle>
+            <DialogDescription>Ručně přidat stroj a nastavit jeho parametry.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Licenční klíč</Label>
+              <Input
+                value={createForm.license_key}
+                onChange={(e) => setCreateForm({ ...createForm, license_key: e.target.value.toUpperCase() })}
+                placeholder="XXXX-XXXX-XXXX-XXX"
+                className="font-mono"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Install ID</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={createForm.install_id}
+                  onChange={(e) => setCreateForm({ ...createForm, install_id: e.target.value })}
+                  placeholder="UUID"
+                  className="font-mono text-xs"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setCreateForm({ ...createForm, install_id: crypto.randomUUID() })}
+                  title="Generovat UUID"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Hostname</Label>
+              <Input
+                value={createForm.hostname}
+                onChange={(e) => setCreateForm({ ...createForm, hostname: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Pobočka</Label>
+              <Select
+                value={createForm.branch_id || "none"}
+                onValueChange={(v) =>
+                  setCreateForm({ ...createForm, branch_id: v === "none" ? "" : v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Bez pobočky" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— Bez pobočky —</SelectItem>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>
+                      {b.name} ({b.code}) · #{b.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              Zrušit
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={isSubmitting || !createForm.license_key.trim() || !createForm.install_id.trim()}
+            >
+              {isSubmitting ? "Vytvářím..." : "Vytvořit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

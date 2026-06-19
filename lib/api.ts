@@ -232,6 +232,17 @@ export async function updateMachine(
   });
 }
 
+// Admin-only manual machine create. Requires a new backend endpoint
+// (POST /api/admin/machines/create).
+export async function createMachine(data: {
+  license_key: string;
+  install_id: string;
+  hostname?: string;
+  branch_id?: number | null;
+}): Promise<{ ok: boolean; machine: Machine }> {
+  return apiRequest("/api/admin/machines/create", { method: "POST", body: data });
+}
+
 // Helper to generate license key format
 export function generateLicenseKey(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
