@@ -71,12 +71,18 @@ interface BranchFormData {
   name: string;
   code: string;
   address: string;
+  ico: string;
+  dic: string;
+  secret: string;
 }
 
 const defaultFormData: BranchFormData = {
   name: "",
   code: "",
   address: "",
+  ico: "",
+  dic: "",
+  secret: "",
 };
 
 interface BranchesTableProps {
@@ -144,6 +150,9 @@ export function BranchesTable({ licenseKey, showLicenseColumn = true }: Branches
         name: formData.name,
         code: formData.code,
         address: formData.address,
+        ico: formData.ico || null,
+        dic: formData.dic || null,
+        secret: formData.secret,
       });
       mutate(["branches", licenseKey, includeArchived]);
       setEditOpen(false);
@@ -186,6 +195,9 @@ export function BranchesTable({ licenseKey, showLicenseColumn = true }: Branches
       name: branch.name,
       code: branch.code,
       address: branch.address || "",
+      ico: branch.ico || "",
+      dic: branch.dic || "",
+      secret: branch.secret || "",
     });
     setEditOpen(true);
   };
@@ -579,6 +591,37 @@ export function BranchesTable({ licenseKey, showLicenseColumn = true }: Branches
                 value={formData.address}
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
               />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>IČO</Label>
+                <Input
+                  value={formData.ico}
+                  onChange={(e) => setFormData({ ...formData, ico: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>DIČ</Label>
+                <Input
+                  value={formData.dic}
+                  onChange={(e) => setFormData({ ...formData, dic: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-2 text-warning">
+                <AlertTriangle className="h-4 w-4" />
+                Secret (šifrovací klíč)
+              </Label>
+              <Input
+                value={formData.secret}
+                onChange={(e) => setFormData({ ...formData, secret: e.target.value })}
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                Pozor: změna secretu znepřístupní dešifrování stávajících záloh této pobočky.
+                Měňte jen pokud víte, co děláte.
+              </p>
             </div>
           </div>
           <DialogFooter>

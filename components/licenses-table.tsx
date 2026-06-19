@@ -81,6 +81,7 @@ interface LicenseFormData {
   validUntil: string;
   maxMachines: number;
   notes: string;
+  loginCode: string;
 }
 
 const defaultFormData: LicenseFormData = {
@@ -91,6 +92,7 @@ const defaultFormData: LicenseFormData = {
   validUntil: "",
   maxMachines: 1,
   notes: "",
+  loginCode: "",
 };
 
 export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license: License) => void }) {
@@ -124,6 +126,7 @@ export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license:
         validUntil: formData.type === "temporary" ? formData.validUntil : undefined,
         maxMachines: formData.maxMachines,
         notes: formData.notes || undefined,
+        loginCode: formData.loginCode || undefined,
       });
       mutate("licenses");
       setCreateOpen(false);
@@ -145,6 +148,7 @@ export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license:
         valid_until: formData.type === "temporary" ? formData.validUntil : null,
         max_machines: formData.maxMachines,
         notes: formData.notes,
+        login_code: formData.loginCode,
       });
       mutate("licenses");
       setEditOpen(false);
@@ -204,6 +208,7 @@ export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license:
       validUntil: license.valid_until ? license.valid_until.split("T")[0] : "",
       maxMachines: license.max_machines,
       notes: license.notes || "",
+      loginCode: license.login_code || "",
     });
     setEditOpen(true);
   };
@@ -347,6 +352,20 @@ export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license:
                     }
                     rows={3}
                   />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Přihlašovací kód (subadmin)</Label>
+                  <Input
+                    placeholder="Automaticky generovaný"
+                    value={formData.loginCode}
+                    onChange={(e) =>
+                      setFormData({ ...formData, loginCode: e.target.value })
+                    }
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Kód, kterým se majitel přihlásí do subadmin panelu. Necháte-li prázdné, vygeneruje se automaticky.
+                  </p>
                 </div>
               </div>
               <DialogFooter>
@@ -624,6 +643,19 @@ export function LicensesTable({ onSelectLicense }: { onSelectLicense?: (license:
                 }
                 rows={3}
               />
+            </div>
+            <div className="grid gap-2">
+              <Label>Přihlašovací kód (subadmin)</Label>
+              <Input
+                value={formData.loginCode}
+                onChange={(e) =>
+                  setFormData({ ...formData, loginCode: e.target.value })
+                }
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Kód pro přihlášení majitele do subadmin panelu.
+              </p>
             </div>
           </div>
           <DialogFooter>

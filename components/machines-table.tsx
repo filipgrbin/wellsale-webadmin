@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import { getMachines, deleteMachine, getBranches, type Machine } from "@/lib/api";
+import { getMachines, deleteMachine, getBranches, updateMachine, type Machine } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -27,6 +27,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   MoreHorizontal,
   Trash2,
@@ -34,6 +42,7 @@ import {
   Search,
   Monitor,
   Copy,
+  Edit,
   Fingerprint,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -62,12 +71,15 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
   );
   const [search, setSearch] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ install_id: "", hostname: "", branch_id: "" });
   const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const machines = data?.machines || [];
+  const branches = branchesData?.branches || [];
   const branchHwidById = new Map(
-    (branchesData?.branches || []).map((b) => [String(b.id), b.hwid] as const)
+    branches.map((b) => [String(b.id), b.hwid] as const)
   );
   const filteredMachines = machines.filter(
     (m) =>
@@ -85,6 +97,33 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
       setDeleteOpen(false);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Chyba při mazání stroje");
+    }
+    setIsSubmitting(false);
+  };
+
+  const openEdit = (machine: Machine) => {
+    setSelectedMachine(machine);
+    setEditForm({
+      install_id: machine.install_id || "",
+      hostname: machine.hostname || "",
+      branch_id: machine.branch_id != null ? String(machine.branch_id) : "",
+    });
+    setEditOpen(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!selectedMachine) return;
+    setIsSubmitting(true);
+    try {
+      await updateMachine(selectedMachine.id, {
+        install_id: editForm.install_id,
+        hostname: editForm.hostname,
+        branch_id: editForm.branch_id ? Number(editForm.branch_id) : null,
+      });
+      mutate(["machines", licenseKey]);
+      setEditOpen(false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Chyba při úpravě stroje");
     }
     setIsSubmitting(false);
   };
@@ -237,6 +276,10 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(machine)}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          Upravit
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => copyToClipboard(machine.install_id)}
                         >
@@ -262,6 +305,62 @@ export function MachinesTable({ licenseKey, showLicenseColumn = true }: Machines
           </TableBody>
         </Table>
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upravit stroj</DialogTitle>
+            <DialogDescription>ID: {selectedMachine?.id}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Install ID</Label>
+              <Input
+                value={editForm.install_id}
+                onChange={(e) => setEditForm({ ...editForm, install_id: e.target.value })}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Hostname</Label>
+              <Input
+                value={editForm.hostname}
+                onChange={(e) => setEditForm({ ...editForm, hostname: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Pobočka</Label>
+              <Select
+                value={editForm.branch_id || "none"}
+                onValueChange={(v) =>
+                  setEditForm({ ...editForm, branch_id: v === "none" ? "" : v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Bez pobočky" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— Bez pobočky —</SelectItem>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>
+                      {b.name} ({b.code}) · #{b.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              Zrušit
+            </Button>
+            <Button onClick={handleUpdate} disabled={isSubmitting}>
+              {isSubmitting ? "Ukládám..." : "Uložit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

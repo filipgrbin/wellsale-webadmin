@@ -40,7 +40,8 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
   };
 
   const handleLoginCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/[^0-9]/g, "").slice(0, 5);
+    // login_code can be alphanumeric (e.g. an 8-char hex code), not just 5 digits.
+    const value = e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 64);
     setLoginCode(value);
   };
 
@@ -53,8 +54,8 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
       return;
     }
 
-    if (loginCode.length !== 5) {
-      setError("Prihlasovaci kod musi mit 5 cislic");
+    if (!loginCode) {
+      setError("Zadejte prihlasovaci kod");
       return;
     }
 
@@ -75,12 +76,9 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
         return;
       }
 
-      // In a real app, verify the login code against a hash stored in DB
-      // For now, we'll use a simple validation - code should match last 5 digits of license hash
-      // This is a placeholder - you should implement proper code verification on the API side
-      const expectedCode = generateLoginCode(licenseKey);
-      
-      if (loginCode !== "12345") {
+      // Validate against the license's stored login_code (case-insensitive).
+      const expected = (license.login_code ?? "").trim().toLowerCase();
+      if (!expected || loginCode.trim().toLowerCase() !== expected) {
         setError("Neplatny prihlasovaci kod");
         return;
       }
@@ -97,18 +95,6 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
       setIsLoading(false);
     }
   };
-
-  // Simple hash function to generate a 5-digit code from license key
-  // In production, this should be done server-side with proper encryption
-  function generateLoginCode(key: string): string {
-    let hash = 0;
-    for (let i = 0; i < key.length; i++) {
-      const char = key.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return String(Math.abs(hash) % 100000).padStart(5, "0");
-  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -156,16 +142,15 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
               <Input
                 id="loginCode"
                 type="text"
-                inputMode="numeric"
-                placeholder="00000"
+                placeholder="kod od administratora"
                 value={loginCode}
                 onChange={handleLoginCodeChange}
-                className="text-center font-mono text-2xl tracking-[0.5em]"
-                maxLength={5}
+                className="text-center font-mono text-xl tracking-widest"
+                maxLength={64}
                 autoComplete="off"
               />
               <p className="text-xs text-muted-foreground text-center">
-                5mistny kod obdrzeny od administratora
+                Kod obdrzeny od administratora
               </p>
             </div>
 

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SubadminBranches } from "@/components/subadmin-branches";
 import { SubadminBackups } from "@/components/subadmin-backups";
 import { SubadminStats } from "@/components/subadmin-stats";
-import { Building2, Database, LayoutDashboard, LogOut, User } from "lucide-react";
+import { Building2, Database, KeyRound, LayoutDashboard, LogOut, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { updateLicense } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface SubadminDashboardProps {
   session: SubadminSession;
@@ -24,6 +35,23 @@ interface SubadminDashboardProps {
 
 export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps) {
   const [activeTab, setActiveTab] = useState("overview");
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [savingCode, setSavingCode] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+
+  const handleSaveCode = async () => {
+    setSavingCode(true);
+    setCodeError(null);
+    try {
+      await updateLicense(session.licenseKey, { login_code: newCode.trim() });
+      setCodeOpen(false);
+    } catch (e) {
+      setCodeError(e instanceof Error ? e.message : "Chyba při ukládání kódu");
+    } finally {
+      setSavingCode(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -57,6 +85,17 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-xs font-mono text-muted-foreground">
                   {session.licenseKey}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => {
+                    setNewCode(session.loginCode || "");
+                    setCodeError(null);
+                    setCodeOpen(true);
+                  }}
+                >
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  Změnit přihlašovací kód
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={onLogout} className="text-destructive">
@@ -115,6 +154,35 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
           </TabsContent>
         </Tabs>
       </main>
+
+      <Dialog open={codeOpen} onOpenChange={setCodeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Změnit přihlašovací kód</DialogTitle>
+            <DialogDescription>
+              Kód, kterým se přihlašujete do tohoto panelu (spolu s licenčním klíčem).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-4">
+            <Label>Nový kód</Label>
+            <Input
+              value={newCode}
+              onChange={(e) => setNewCode(e.target.value)}
+              className="font-mono"
+              autoComplete="off"
+            />
+            {codeError && <p className="text-sm text-destructive">{codeError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCodeOpen(false)}>
+              Zrušit
+            </Button>
+            <Button onClick={handleSaveCode} disabled={savingCode || !newCode.trim()}>
+              {savingCode ? "Ukládám..." : "Uložit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

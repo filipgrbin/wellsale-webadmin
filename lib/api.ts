@@ -62,6 +62,10 @@ export interface Branch {
   address: string | null;
   created_at: string;
   archived_at: string | null;
+  ico: string | null;
+  dic: string | null;
+  // secret is the branch's DB encryption key — highly sensitive.
+  secret: string;
   // Hardware binding (admin-managed). hwid is null until a branch binds to a machine.
   hwid: string | null;
   hwid_bound_at: string | null;
@@ -97,6 +101,7 @@ export async function createLicense(data: {
   validUntil?: string;
   maxMachines: number;
   notes?: string;
+  loginCode?: string;
 }): Promise<{ ok: boolean; license: License }> {
   return apiRequest("/api/admin/licenses/create", { method: "POST", body: data });
 }
@@ -110,6 +115,7 @@ export async function updateLicense(
     valid_until: string | null;
     max_machines: number;
     notes: string;
+    login_code: string;
   }>
 ): Promise<{ ok: boolean; license: License }> {
   return apiRequest("/api/admin/licenses/update", {
@@ -168,6 +174,9 @@ export async function updateBranch(
     archived_at: string | null;
     hwid: string | null;
     hwid_bound_at: string | null;
+    secret: string;
+    ico: string | null;
+    dic: string | null;
   }>
 ): Promise<{ ok: boolean; branch: Branch }> {
   return apiRequest("/api/admin/branches/update", {
@@ -204,6 +213,22 @@ export async function deleteMachine(id: number): Promise<{ ok: boolean }> {
   return apiRequest("/api/admin/machines/delete", {
     method: "POST",
     body: { id },
+  });
+}
+
+// Admin-only machine edit. Requires a new backend endpoint
+// (POST /api/admin/machines/update) whitelisting install_id/hostname/branch_id.
+export async function updateMachine(
+  id: number,
+  fields: Partial<{
+    install_id: string;
+    hostname: string;
+    branch_id: number | null;
+  }>
+): Promise<{ ok: boolean; machine: Machine }> {
+  return apiRequest("/api/admin/machines/update", {
+    method: "POST",
+    body: { id, fields },
   });
 }
 
