@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { type License } from "@/lib/api";
+import { type License, type Branch } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { LicensesTable } from "@/components/licenses-table";
 import { BranchesTable } from "@/components/branches-table";
+import { AdminBranchDetail } from "@/components/admin-branch-detail";
 import { MachinesTable } from "@/components/machines-table";
 import { LicenseDetail } from "@/components/license-detail";
 import { AdminBackupsTable } from "@/components/admin-backups-table";
@@ -17,6 +18,7 @@ export default function AdminDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedLicense, setSelectedLicense] = useState<License | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
 
   const handleSelectLicense = (license: License) => {
     setSelectedLicense(license);
@@ -139,15 +141,19 @@ export default function AdminDashboard() {
           </TabsContent>
 
           <TabsContent value="branches" className="m-0">
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight">Pobočky</h2>
-                <p className="text-muted-foreground">
-                  Správa poboček napříč všemi licencemi
-                </p>
+            {selectedBranch ? (
+              <AdminBranchDetail branch={selectedBranch} onBack={() => setSelectedBranch(null)} />
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight">Pobočky</h2>
+                  <p className="text-muted-foreground">
+                    Správa poboček napříč všemi licencemi
+                  </p>
+                </div>
+                <BranchesTable onSelectBranch={setSelectedBranch} />
               </div>
-              <BranchesTable />
-            </div>
+            )}
           </TabsContent>
 
           <TabsContent value="machines" className="m-0">

@@ -88,9 +88,10 @@ const defaultFormData: BranchFormData = {
 interface BranchesTableProps {
   licenseKey?: string;
   showLicenseColumn?: boolean;
+  onSelectBranch?: (branch: Branch) => void;
 }
 
-export function BranchesTable({ licenseKey, showLicenseColumn = true }: BranchesTableProps) {
+export function BranchesTable({ licenseKey, showLicenseColumn = true, onSelectBranch }: BranchesTableProps) {
   const [includeArchived, setIncludeArchived] = useState(false);
   const { data, error, isLoading } = useSWR(
     ["branches", licenseKey, includeArchived],
@@ -342,7 +343,16 @@ export function BranchesTable({ licenseKey, showLicenseColumn = true }: Branches
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{branch.name}</span>
+                      {onSelectBranch ? (
+                        <button
+                          className="text-left font-medium hover:text-primary hover:underline"
+                          onClick={() => onSelectBranch(branch)}
+                        >
+                          {branch.name}
+                        </button>
+                      ) : (
+                        <span className="font-medium">{branch.name}</span>
+                      )}
                       {branch.archived_at && (
                         <Badge variant="secondary">Archivováno</Badge>
                       )}

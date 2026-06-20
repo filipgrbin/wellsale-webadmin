@@ -26,6 +26,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { cs } from "date-fns/locale";
 import { BranchesTable } from "./branches-table";
 import { MachinesTable } from "./machines-table";
+import { AdminBranchDetail } from "./admin-branch-detail";
 
 function formatDate(date: string | null) {
   if (!date) return "—";
@@ -44,6 +45,7 @@ interface LicenseDetailProps {
 
 export function LicenseDetail({ license, onBack }: LicenseDetailProps) {
   const [activeTab, setActiveTab] = useState("branches");
+  const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
 
   const { data: branchesData } = useSWR(
     ["branches", license.license_key, false],
@@ -65,6 +67,10 @@ export function LicenseDetail({ license, onBack }: LicenseDetailProps) {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
+
+  if (selectedBranch) {
+    return <AdminBranchDetail branch={selectedBranch} onBack={() => setSelectedBranch(null)} />;
+  }
 
   return (
     <div className="space-y-6">
@@ -250,7 +256,11 @@ export function LicenseDetail({ license, onBack }: LicenseDetailProps) {
           </CardHeader>
           <CardContent className="pt-6">
             <TabsContent value="branches" className="m-0">
-              <BranchesTable licenseKey={license.license_key} showLicenseColumn={false} />
+              <BranchesTable
+                licenseKey={license.license_key}
+                showLicenseColumn={false}
+                onSelectBranch={setSelectedBranch}
+              />
             </TabsContent>
             <TabsContent value="machines" className="m-0">
               <MachinesTable licenseKey={license.license_key} showLicenseColumn={false} />
