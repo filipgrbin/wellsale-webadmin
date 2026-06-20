@@ -420,6 +420,8 @@ export default function BranchDetailPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Datum uzávěrky</TableHead>
+                      <TableHead>Tržba</TableHead>
+                      <TableHead>Zisk</TableHead>
                       <TableHead>Nahráno</TableHead>
                       <TableHead>Velikost</TableHead>
                       <TableHead className="text-right">Akce</TableHead>
@@ -428,6 +430,8 @@ export default function BranchDetailPage() {
                   <TableBody>
                     {uzaverkyBackups.map((backup) => {
                       const closeDate = extractDateFromFilename(backup.file_name);
+                      const meta = (backup.metadata_json || {}) as { total_revenue?: number; real_zisk?: number };
+                      const rz = Number(meta.real_zisk);
                       return (
                         <TableRow key={backup.id}>
                           <TableCell className="font-medium">
@@ -435,6 +439,12 @@ export default function BranchDetailPage() {
                               <Calendar className="h-4 w-4 text-muted-foreground" />
                               {closeDate ? new Date(closeDate).toLocaleDateString("cs-CZ") : backup.file_name}
                             </div>
+                          </TableCell>
+                          <TableCell className="font-medium text-green-500">
+                            {meta.total_revenue != null ? formatCurrency(meta.total_revenue) : "—"}
+                          </TableCell>
+                          <TableCell className="font-medium text-emerald-500">
+                            {Number.isFinite(rz) ? formatCurrency(rz) : "—"}
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             {new Date(backup.uploaded_at).toLocaleString("cs-CZ")}
@@ -585,7 +595,7 @@ export default function BranchDetailPage() {
               // Uzaverka Dialog Content
               <div className="flex-1 overflow-hidden">
                 {/* Stats Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
                   <Card className="bg-secondary/50">
                     <CardContent className="p-3 flex items-center gap-2">
                       <ShoppingCart className="h-6 w-6 text-primary shrink-0" />
@@ -630,6 +640,20 @@ export default function BranchDetailPage() {
                       <div>
                         <p className="text-xl font-bold">{formatCurrency(decryptedData.stats.totalCard)}</p>
                         <p className="text-xs text-muted-foreground">QR platby</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-secondary/50">
+                    <CardContent className="p-3 flex items-center gap-2">
+                      <TrendingUp className="h-6 w-6 text-emerald-400 shrink-0" />
+                      <div>
+                        <p className="text-xl font-bold">
+                          {(() => {
+                            const rz = Number((viewingBackup?.metadata_json as Record<string, unknown> | null)?.real_zisk);
+                            return Number.isFinite(rz) ? formatCurrency(rz) : "—";
+                          })()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Reálný zisk</p>
                       </div>
                     </CardContent>
                   </Card>

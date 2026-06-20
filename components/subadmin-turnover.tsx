@@ -17,6 +17,7 @@ interface UzaverkaMeta {
   tx_count?: number;
   close_date?: string;
   total_revenue?: number;
+  real_zisk?: number; // obrat - náklady (revenue - costs)
 }
 
 function formatCurrency(amount: number): string {
@@ -75,7 +76,7 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
 
   // Aggregate by close_date, using the most recent closure per branch per day
   // (treats uzaverka as the cumulative end-of-day Z-report, no double counting).
-  const { byDate, monthTotal } = useMemo(() => {
+  const { byDate, monthTotal, monthProfit, monthProfitKnown } = useMemo(() => {
     const backups = data?.backups ?? [];
     const latest = new Map<string, Backup>();
     for (const b of backups) {
@@ -88,27 +89,57 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
         latest.set(key, b);
       }
     }
-    const byDate = new Map<string, { revenue: number; tx: number; branches: Set<number> }>();
+    const byDate = new Map<
+      string,
+      { revenue: number; profit: number; profitKnown: boolean; tx: number; branches: Set<number> }
+    >();
     for (const b of latest.values()) {
       const meta = b.metadata_json as UzaverkaMeta;
       const d = meta.close_date as string;
-      const cur = byDate.get(d) ?? { revenue: 0, tx: 0, branches: new Set<number>() };
+      const cur =
+        byDate.get(d) ?? { revenue: 0, profit: 0, profitKnown: false, tx: 0, branches: new Set<number>() };
       cur.revenue += Number(meta.total_revenue) || 0;
       cur.tx += Number(meta.tx_count) || 0;
+      const rz = Number(meta.real_zisk);
+      if (Number.isFinite(rz)) {
+        cur.profit += rz;
+        cur.profitKnown = true;
+      }
       cur.branches.add(b.branch_id);
       byDate.set(d, cur);
     }
     const monthPrefix = pragueDate(new Date()).slice(0, 7); // YYYY-MM
     let monthTotal = 0;
-    for (const [d, v] of byDate) if (d.startsWith(monthPrefix)) monthTotal += v.revenue;
-    return { byDate, monthTotal };
+    let monthProfit = 0;
+    let monthProfitKnown = false;
+    for (const [d, v] of byDate) {
+      if (!d.startsWith(monthPrefix)) continue;
+      monthTotal += v.revenue;
+      if (v.profitKnown) {
+        monthProfit += v.profit;
+        monthProfitKnown = true;
+      }
+    }
+    return { byDate, monthTotal, monthProfit, monthProfitKnown };
   }, [data]);
 
-  const sel = byDate.get(selected) ?? { revenue: 0, tx: 0, branches: new Set<number>() };
-  const weekTotal = useMemo(
-    () => days.reduce((s, d) => s + (byDate.get(d)?.revenue ?? 0), 0),
-    [days, byDate]
-  );
+  const sel =
+    byDate.get(selected) ?? { revenue: 0, profit: 0, profitKnown: false, tx: 0, branches: new Set<number>() };
+  const week = useMemo(() => {
+    let revenue = 0;
+    let profit = 0;
+    let profitKnown = false;
+    for (const d of days) {
+      const v = byDate.get(d);
+      if (!v) continue;
+      revenue += v.revenue;
+      if (v.profitKnown) {
+        profit += v.profit;
+        profitKnown = true;
+      }
+    }
+    return { revenue, profit, profitKnown };
+  }, [days, byDate]);
 
   return (
     <Card className="border-border bg-card">
@@ -143,6 +174,12 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
         {/* Selected day */}
         <div>
           <div className="text-4xl font-bold tracking-tight">{formatCurrency(sel.revenue)}</div>
+          <p className="mt-1 text-sm">
+            <span className="text-muted-foreground">Reálný zisk: </span>
+            <span className="font-semibold text-emerald-500">
+              {sel.profitKnown ? formatCurrency(sel.profit) : "—"}
+            </span>
+          </p>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
             <Store className="h-3.5 w-3.5" />
             Z {sel.branches.size} {prodejnyLabel(sel.branches.size)}
@@ -162,7 +199,10 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Posledních 7 dní</p>
-              <p className="text-lg font-semibold">{formatCurrency(weekTotal)}</p>
+              <p className="text-lg font-semibold">{formatCurrency(week.revenue)}</p>
+              <p className="text-xs text-emerald-500">
+                zisk {week.profitKnown ? formatCurrency(week.profit) : "—"}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -172,6 +212,9 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
             <div>
               <p className="text-xs text-muted-foreground">Tento měsíc</p>
               <p className="text-lg font-semibold">{formatCurrency(monthTotal)}</p>
+              <p className="text-xs text-emerald-500">
+                zisk {monthProfitKnown ? formatCurrency(monthProfit) : "—"}
+              </p>
             </div>
           </div>
         </div>

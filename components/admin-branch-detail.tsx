@@ -62,6 +62,18 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("cs-CZ", {
+    style: "currency",
+    currency: "CZK",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function metaNumber(meta: unknown, key: string): number {
+  return Number((meta as Record<string, unknown> | null)?.[key]);
+}
+
 function Info({ label, value, icon }: { label: string; value: string; icon: ReactNode }) {
   return (
     <div className="flex items-start gap-3">
@@ -244,6 +256,8 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Soubor</TableHead>
                   <TableHead>Typ</TableHead>
+                  <TableHead>Tržba</TableHead>
+                  <TableHead>Zisk</TableHead>
                   <TableHead>Velikost</TableHead>
                   <TableHead>Nahráno</TableHead>
                   <TableHead className="w-[100px]"></TableHead>
@@ -252,7 +266,7 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
               <TableBody>
                 {backups.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                       Žádné zálohy
                     </TableCell>
                   </TableRow>
@@ -264,6 +278,16 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">{b.kind}</Badge>
+                      </TableCell>
+                      <TableCell className="text-green-500">
+                        {Number.isFinite(metaNumber(b.metadata_json, "total_revenue"))
+                          ? formatCurrency(metaNumber(b.metadata_json, "total_revenue"))
+                          : "—"}
+                      </TableCell>
+                      <TableCell className="text-emerald-500">
+                        {Number.isFinite(metaNumber(b.metadata_json, "real_zisk"))
+                          ? formatCurrency(metaNumber(b.metadata_json, "real_zisk"))
+                          : "—"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{formatBytes(b.size_bytes)}</TableCell>
                       <TableCell className="text-muted-foreground">

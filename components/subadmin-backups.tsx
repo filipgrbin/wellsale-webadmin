@@ -409,6 +409,7 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                       <TableHead>Soubor</TableHead>
                       <TableHead className="hidden sm:table-cell">Pobocka</TableHead>
                       <TableHead>Typ</TableHead>
+                      <TableHead className="hidden md:table-cell">Zisk</TableHead>
                       <TableHead className="hidden md:table-cell">Velikost</TableHead>
                       <TableHead className="hidden lg:table-cell">Nahrano</TableHead>
                       <TableHead className="text-right">Akce</TableHead>
@@ -442,6 +443,12 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">{backup.kind}</Badge>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell text-emerald-500">
+                          {(() => {
+                            const v = Number((backup.metadata_json as Record<string, unknown> | null)?.real_zisk);
+                            return Number.isFinite(v) ? formatCurrency(v) : "—";
+                          })()}
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-muted-foreground">
                           {formatBytes(backup.size_bytes)}

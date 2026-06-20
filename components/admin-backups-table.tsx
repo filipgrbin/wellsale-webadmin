@@ -428,6 +428,7 @@ export function AdminBackupsTable() {
                       <TableHead>Licence</TableHead>
                       <TableHead>Pobocka</TableHead>
                       <TableHead>Typ</TableHead>
+                      <TableHead>Zisk</TableHead>
                       <TableHead>Velikost</TableHead>
                       <TableHead>Nahrano</TableHead>
                       <TableHead className="text-right">Akce</TableHead>
@@ -467,6 +468,12 @@ export function AdminBackupsTable() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">{backup.kind}</Badge>
+                        </TableCell>
+                        <TableCell className="text-emerald-500">
+                          {(() => {
+                            const v = Number((backup.metadata_json as Record<string, unknown> | null)?.real_zisk);
+                            return Number.isFinite(v) ? formatCurrency(v) : "—";
+                          })()}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {formatBytes(backup.size_bytes)}
