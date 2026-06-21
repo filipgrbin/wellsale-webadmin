@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { getBackups, type Backup } from "@/lib/api";
+import { getBackups, getBranches, type Backup } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Receipt, Store, CalendarDays, CalendarRange } from "lucide-react";
@@ -70,6 +70,12 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
     ["subadmin-turnover", licenseKey],
     () => getBackups({ licenseKey, kind: "uzaverka", limit: 500 })
   );
+  // Active branches under the license — denominator for "z N/M prodejen".
+  const { data: branchesData } = useSWR(
+    ["subadmin-turnover-branches", licenseKey],
+    () => getBranches(licenseKey)
+  );
+  const activeBranchCount = (branchesData?.branches ?? []).filter((b) => !b.archived_at).length;
 
   const days = useMemo(() => lastNDays(7), []);
   const [selected, setSelected] = useState(days[0]);
@@ -91,19 +97,21 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
     }
     const byDate = new Map<
       string,
-      { revenue: number; profit: number; profitKnown: boolean; tx: number; branches: Set<number> }
+      { revenue: number; profit: number; profitBranches: Set<number>; tx: number; branches: Set<number> }
     >();
     for (const b of latest.values()) {
       const meta = b.metadata_json as UzaverkaMeta;
       const d = meta.close_date as string;
       const cur =
-        byDate.get(d) ?? { revenue: 0, profit: 0, profitKnown: false, tx: 0, branches: new Set<number>() };
+        byDate.get(d) ??
+        { revenue: 0, profit: 0, profitBranches: new Set<number>(), tx: 0, branches: new Set<number>() };
       cur.revenue += Number(meta.total_revenue) || 0;
       cur.tx += Number(meta.tx_count) || 0;
       const rz = Number(meta.real_zisk);
+      // Only branches whose closure actually carried real_zisk count toward profit.
       if (Number.isFinite(rz)) {
         cur.profit += rz;
-        cur.profitKnown = true;
+        cur.profitBranches.add(b.branch_id);
       }
       cur.branches.add(b.branch_id);
       byDate.set(d, cur);
@@ -115,7 +123,7 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
     for (const [d, v] of byDate) {
       if (!d.startsWith(monthPrefix)) continue;
       monthTotal += v.revenue;
-      if (v.profitKnown) {
+      if (v.profitBranches.size > 0) {
         monthProfit += v.profit;
         monthProfitKnown = true;
       }
@@ -124,7 +132,8 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
   }, [data]);
 
   const sel =
-    byDate.get(selected) ?? { revenue: 0, profit: 0, profitKnown: false, tx: 0, branches: new Set<number>() };
+    byDate.get(selected) ??
+    { revenue: 0, profit: 0, profitBranches: new Set<number>(), tx: 0, branches: new Set<number>() };
   const week = useMemo(() => {
     let revenue = 0;
     let profit = 0;
@@ -133,7 +142,7 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
       const v = byDate.get(d);
       if (!v) continue;
       revenue += v.revenue;
-      if (v.profitKnown) {
+      if (v.profitBranches.size > 0) {
         profit += v.profit;
         profitKnown = true;
       }
@@ -177,8 +186,13 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
           <p className="mt-1 text-sm">
             <span className="text-muted-foreground">Reálný zisk: </span>
             <span className="font-semibold text-emerald-500">
-              {sel.profitKnown ? formatCurrency(sel.profit) : "—"}
+              {sel.profitBranches.size > 0 ? formatCurrency(sel.profit) : "—"}
             </span>
+            {activeBranchCount > 0 && sel.profitBranches.size < activeBranchCount && (
+              <span className="text-muted-foreground">
+                {" "}z {sel.profitBranches.size}/{activeBranchCount} prodejen
+              </span>
+            )}
           </p>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
             <Store className="h-3.5 w-3.5" />
