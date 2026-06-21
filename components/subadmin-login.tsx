@@ -76,6 +76,17 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
         return;
       }
 
+      // Match the backend's assertLicenseActive: a temporary license past its
+      // valid_until is inactive, so the subadmin can't log in either.
+      if (
+        license.license_type === "temporary" &&
+        license.valid_until &&
+        new Date(license.valid_until) < new Date()
+      ) {
+        setError("Platnost licence vypršela");
+        return;
+      }
+
       // Validate against the license's stored login_code (case-insensitive).
       const expected = (license.login_code ?? "").trim().toLowerCase();
       if (!expected || loginCode.trim().toLowerCase() !== expected) {
