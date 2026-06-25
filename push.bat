@@ -44,7 +44,7 @@ git commit -m "%commitmsg%"
 
 REM --- Push ---
 echo [5/5] Pushuji na origin/main...
-git push -u origin main
+git push -u origin main --force
 
 echo.
 echo ============================================
