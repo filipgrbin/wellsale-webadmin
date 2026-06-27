@@ -4,9 +4,11 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isAdminAuthed = request.cookies.get("auth")?.value === "true";
 
-  // Subadmin area is fully independent (localStorage-based session). It is never
-  // gated by the admin cookie, and a subadmin session never grants admin access.
-  if (pathname.startsWith("/subadmin")) {
+  // Subadmin area is the public root. It is fully independent
+  // (localStorage-based session), never gated by the admin cookie, and a
+  // subadmin session never grants admin access. Root (/) and branch detail
+  // pages (/branch/...) belong to the subadmin and stay open.
+  if (pathname === "/" || pathname.startsWith("/branch")) {
     return NextResponse.next();
   }
 
@@ -20,12 +22,13 @@ export function middleware(request: NextRequest) {
   // password prompt — so a subadmin session can't slip into the admin area.
   if (pathname === "/login") {
     if (isAdminAuthed) {
-      return NextResponse.redirect(new URL("/", request.url));
+      return NextResponse.redirect(new URL("/mainadmin", request.url));
     }
     return NextResponse.next();
   }
 
-  // Everything else requires a valid admin cookie.
+  // Everything else (the admin dashboard at /mainadmin and admin APIs)
+  // requires a valid admin cookie.
   if (!isAdminAuthed) {
     return NextResponse.redirect(new URL("/login", request.url));
   }

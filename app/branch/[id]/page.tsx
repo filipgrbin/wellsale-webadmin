@@ -135,11 +135,11 @@ export default function BranchDetailPage() {
         setSession(JSON.parse(savedSession));
       } catch {
         // Invalid session, redirect to login
-        router.push("/subadmin");
+        router.push("/");
       }
     } else {
       // No session, redirect to login
-      router.push("/subadmin");
+      router.push("/");
     }
     setSessionLoading(false);
   }, [router]);
@@ -293,7 +293,7 @@ export default function BranchDetailPage() {
   }
 
   if (!session) {
-    return null; // Will redirect to /subadmin
+    return null; // Will redirect to /
   }
 
   if (branchLoading) {

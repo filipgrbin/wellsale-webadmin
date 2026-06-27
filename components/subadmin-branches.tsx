@@ -100,7 +100,7 @@ export function SubadminBranches({ licenseKey }: SubadminBranchesProps) {
   };
 
   const handleBranchClick = (branch: Branch) => {
-    router.push(`/subadmin/branch/${branch.id}`);
+    router.push(`/branch/${branch.id}`);
   };
 
   if (isLoading) {

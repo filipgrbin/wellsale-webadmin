@@ -35,7 +35,7 @@ export default function LoginPage() {
       }
 
       // Authentication successful
-      router.push("/");
+      router.push("/mainadmin");
     } catch (err) {
       setError("Chyba při přihlášení");
       setPassword("");

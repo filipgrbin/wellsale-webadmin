@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Key, AlertCircle, Shield } from "lucide-react";
-import type { SubadminSession } from "@/app/subadmin/page";
+import type { SubadminSession } from "@/app/page";
 
 interface SubadminLoginProps {
   onLogin: (session: SubadminSession) => void;
@@ -177,7 +177,7 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
             </Button>
 
             <div className="text-center">
-              <a href="/" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+              <a href="/login" className="text-sm text-muted-foreground hover:text-primary transition-colors">
                 Zpet na admin prihlaseni
               </a>
             </div>

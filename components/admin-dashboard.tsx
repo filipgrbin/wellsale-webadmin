@@ -71,8 +71,8 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <a 
-                href="/subadmin" 
+              <a
+                href="/"
                 className="text-xs text-muted-foreground hover:text-primary transition-colors"
               >
                 Subadmin Panel
