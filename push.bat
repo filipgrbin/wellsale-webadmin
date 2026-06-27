@@ -3,10 +3,10 @@ chcp 65001 >nul
 cd /d "%~dp0"
 setlocal
 
-set "REPO=https://github.com/filipgrbin/krejtom-webadmin.git"
+set "REPO=https://github.com/filipgrbin/wellsale-webadmin.git"
 
 echo ============================================
-echo   Krejtom Webadmin - commit ^& push
+echo   Wellsale Webadmin - commit ^& push
 echo ============================================
 echo.
 
