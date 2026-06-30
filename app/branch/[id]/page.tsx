@@ -23,6 +23,7 @@ import {
   getUserCardFields,
   isTransactionEventsTable,
 } from "@/lib/backup-preview-utils";
+import { BranchFaults } from "@/components/branch-faults";
 
 interface SubadminSession {
   licenseKey: string;
@@ -565,6 +566,9 @@ export default function BranchDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Nahlášené chyby a výpadky */}
+        <BranchFaults licenseKey={session.licenseKey} branchId={branchId} />
       </div>
 
       {/* Backup Viewer Dialog */}

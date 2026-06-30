@@ -415,6 +415,53 @@ export interface ParsedBackupData {
   }>;
 }
 
+// Fault / outage reports (fault_log table). Reported by the POS app via
+// POST /api/fault/report; the admin panel reads them back per branch.
+//
+// A single audit row inside json_payload. The POS attaches a selection of
+// rows from two different logs: the structured "audit" log (rows have these
+// fields) and the plain-text "main"/updater log (just `[datetime] ... text`
+// lines). normalizeFaultLogs() in components/branch-faults.tsx splits them.
+export interface FaultAuditRow {
+  id?: number;
+  actor?: string;
+  action?: string;
+  details?: string;
+  category?: string;
+  created_at?: string;
+}
+
+export interface FaultLog {
+  id: number;
+  license_key: string;
+  branch_id: number;
+  issue_start: string | null;
+  issue_end: string | null;
+  reason: string;
+  resolution: string | null;
+  reported_by: string | null;
+  // Attached log excerpts. Either an array of audit rows, or an object that
+  // groups the two log kinds (e.g. { audit: [...], main: [...] }). Parsed on
+  // the client because the exact shape depends on the POS build.
+  json_payload: unknown;
+  signature: string | null;
+  cert_thumbprint: string | null;
+  local_id: number | null;
+  created_at: string;
+}
+
+// Admin-only fault list. Requires a backend endpoint
+// (GET /api/admin/faults?licenseKey=&branchId=) returning { ok, faults }.
+export async function getFaults(params?: {
+  licenseKey?: string;
+  branchId?: number;
+}): Promise<{ ok: boolean; faults: FaultLog[] }> {
+  const queryParams: Record<string, string> = {};
+  if (params?.licenseKey) queryParams.licenseKey = params.licenseKey;
+  if (params?.branchId) queryParams.branchId = String(params.branchId);
+  return apiRequest("/api/admin/faults", { params: queryParams });
+}
+
 export async function decryptBackupOnServer(id: number): Promise<ParsedBackupData> {
   const response = await fetch(`/api/admin/backups/decrypt?id=${id}`, {
     headers: {

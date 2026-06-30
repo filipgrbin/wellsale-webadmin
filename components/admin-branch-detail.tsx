@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
+import { BranchFaults } from "@/components/branch-faults";
 
 function formatDate(date: string | null) {
   if (!date) return "—";
@@ -348,6 +349,8 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
           )}
         </CardContent>
       </Card>
+
+      <BranchFaults licenseKey={branch.license_key} branchId={branch.id} />
 
       <Dialog open={deleteId != null} onOpenChange={(o) => { if (!o) setDeleteId(null); }}>
         <DialogContent>
