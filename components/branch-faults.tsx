@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import useSWR from "swr";
-import { getFaults, type FaultLog, type FaultAuditRow } from "@/lib/api";
+import { getFaults, getFault, type FaultLog } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
@@ -30,6 +30,7 @@ import {
   CalendarClock,
   User,
   CheckCircle2,
+  ShieldCheck,
 } from "lucide-react";
 
 interface BranchFaultsProps {
@@ -37,124 +38,25 @@ interface BranchFaultsProps {
   branchId: number;
 }
 
-interface NormalizedLogs {
-  audit: FaultAuditRow[];
-  main: string[];
-}
-
-// json_payload can arrive in a few shapes depending on the POS build:
-//  - an array mixing structured audit rows and plain log strings
-//  - an object grouping the two logs ({ audit: [...], main: [...] })
-//  - a raw text blob
-// Split it into the structured audit log and the plain-text main/updater log.
-function normalizeFaultLogs(payload: unknown): NormalizedLogs {
-  const audit: FaultAuditRow[] = [];
-  const main: string[] = [];
-  if (payload == null) return { audit, main };
-
-  let data: unknown = payload;
-  if (typeof data === "string") {
-    try {
-      data = JSON.parse(data);
-    } catch {
-      // Not JSON — treat the whole thing as raw main-log text.
-      String(payload)
-        .split(/\r?\n/)
-        .map((l) => l.trimEnd())
-        .filter(Boolean)
-        .forEach((l) => main.push(l));
-      return { audit, main };
-    }
-  }
-
-  const isAuditRow = (o: Record<string, unknown>) =>
-    "action" in o || "actor" in o || "category" in o;
-
-  const pushItem = (item: unknown) => {
-    if (item == null) return;
-    if (typeof item === "string") {
-      if (item.trim()) main.push(item);
-      return;
-    }
-    if (typeof item === "object") {
-      const o = item as Record<string, unknown>;
-      if (isAuditRow(o)) audit.push(o as FaultAuditRow);
-      else main.push(JSON.stringify(o));
-    }
-  };
-
-  const pushMainSource = (src: unknown) => {
-    if (Array.isArray(src)) {
-      src.forEach((it) =>
-        typeof it === "string" ? main.push(it) : main.push(JSON.stringify(it))
-      );
-    } else if (typeof src === "string") {
-      src
-        .split(/\r?\n/)
-        .map((l) => l.trimEnd())
-        .filter(Boolean)
-        .forEach((l) => main.push(l));
-    }
-  };
-
-  if (Array.isArray(data)) {
-    data.forEach(pushItem);
-    return { audit, main };
-  }
-
-  if (typeof data === "object") {
-    const o = data as Record<string, unknown>;
-    const auditSrc =
-      o.audit ?? o.audit_rows ?? o.auditRows ?? o.auditLog ?? o.audit_log;
-    const mainSrc =
-      o.main ?? o.log ?? o.main_log ?? o.mainLog ?? o.logLines ?? o.lines ?? o.updater;
-
-    if (auditSrc == null && mainSrc == null) {
-      // Unknown object shape — pull arrays out of any value, else treat the
-      // object itself as a single audit row.
-      const values = Object.values(o);
-      if (values.some((v) => Array.isArray(v))) {
-        values.forEach((v) => Array.isArray(v) && v.forEach(pushItem));
-      } else {
-        pushItem(o);
-      }
-      return { audit, main };
-    }
-
-    if (Array.isArray(auditSrc)) auditSrc.forEach(pushItem);
-    pushMainSource(mainSrc);
-    return { audit, main };
-  }
-
-  return { audit, main };
-}
-
 interface ParsedMainLine {
   time: string;
   level: string;
   scope: string;
   message: string;
-  raw: string;
 }
 
-// Main/updater log lines look like:
-//   [2026-06-24T21:04:49.180Z] [INFO ] [main] startup update check…
+// Main/updater log lines (log_lines) look like:
+//   [2026-06-30T10:14:58.123Z] [ERROR] [printer] tisk selhal: timeout
 function parseMainLine(line: string): ParsedMainLine {
   const full = line.match(/^\s*\[([^\]]+)\]\s*\[([^\]]*)\]\s*\[([^\]]*)\]\s*([\s\S]*)$/);
   if (full) {
-    return {
-      time: full[1].trim(),
-      level: full[2].trim(),
-      scope: full[3].trim(),
-      message: full[4].trim(),
-      raw: line,
-    };
+    return { time: full[1].trim(), level: full[2].trim(), scope: full[3].trim(), message: full[4].trim() };
   }
   const lead = line.match(/^\s*\[([^\]]+)\]\s*([\s\S]*)$/);
   if (lead) {
-    return { time: lead[1].trim(), level: "", scope: "", message: lead[2].trim(), raw: line };
+    return { time: lead[1].trim(), level: "", scope: "", message: lead[2].trim() };
   }
-  return { time: "", level: "", scope: "", message: line, raw: line };
+  return { time: "", level: "", scope: "", message: line };
 }
 
 function fmt(date: string | null | undefined): string {
@@ -177,14 +79,18 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
     ["branch-faults", licenseKey, branchId],
     () => getFaults({ licenseKey, branchId })
   );
+  // The selected list row gives metadata instantly; attachments are fetched.
   const [selected, setSelected] = useState<FaultLog | null>(null);
 
-  const faults = data?.faults || [];
-
-  const logs = useMemo(
-    () => (selected ? normalizeFaultLogs(selected.json_payload) : { audit: [], main: [] }),
-    [selected]
+  const { data: detailData, isLoading: detailLoading } = useSWR(
+    selected ? ["fault-detail", selected.id] : null,
+    () => getFault(selected!.id)
   );
+
+  const faults = data?.faults || [];
+  const detail = detailData?.fault;
+  const auditRows = detail?.audit_rows ?? [];
+  const logLines = detail?.log_lines ?? [];
 
   return (
     <>
@@ -234,7 +140,7 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
                         <TableCell className="whitespace-nowrap text-sm">{fmt(f.created_at)}</TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                           {f.issue_start || f.issue_end
-                            ? `${fmt(f.issue_start)} – ${fmt(f.issue_end)}`
+                            ? `${fmt(f.issue_start)} – ${f.issue_end ? fmt(f.issue_end) : "trvá"}`
                             : "—"}
                         </TableCell>
                         <TableCell className="max-w-[320px] truncate" title={f.reason}>
@@ -276,10 +182,10 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
 
           {selected && (
             <div className="flex-1 overflow-hidden flex flex-col gap-4">
-              {/* Metadata */}
+              {/* Metadata (from the list row, available instantly) */}
               <div className="grid gap-3 sm:grid-cols-2">
                 <Detail icon={<CalendarClock className="h-4 w-4 text-primary" />} label="Začátek výpadku" value={fmt(selected.issue_start)} />
-                <Detail icon={<CalendarClock className="h-4 w-4 text-primary" />} label="Konec výpadku" value={fmt(selected.issue_end)} />
+                <Detail icon={<CalendarClock className="h-4 w-4 text-primary" />} label="Konec výpadku" value={selected.issue_end ? fmt(selected.issue_end) : "Trvá / neznámo"} />
                 <Detail icon={<User className="h-4 w-4 text-primary" />} label="Nahlásil" value={selected.reported_by || "—"} />
                 <Detail icon={<FileText className="h-4 w-4 text-primary" />} label="Lokální ID" value={selected.local_id != null ? String(selected.local_id) : "—"} />
               </div>
@@ -298,69 +204,93 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
                 </div>
               )}
 
-              {/* Two attached logs */}
+              {(selected.signature || selected.cert_thumbprint) && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-secondary/30 p-3 text-xs">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
+                  <span className="font-medium">Elektronicky podepsáno</span>
+                  {selected.cert_thumbprint && (
+                    <span className="font-mono text-muted-foreground" title={selected.cert_thumbprint}>
+                      cert: {selected.cert_thumbprint.slice(0, 16)}{selected.cert_thumbprint.length > 16 ? "…" : ""}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Two attached logs (fetched from /faults/get) */}
               <Tabs defaultValue="audit" className="flex-1 overflow-hidden flex flex-col">
                 <TabsList>
                   <TabsTrigger value="audit" className="gap-2">
                     <ClipboardList className="h-4 w-4" />
-                    Audit log ({logs.audit.length})
+                    Akce uživatelů ({auditRows.length})
                   </TabsTrigger>
                   <TabsTrigger value="main" className="gap-2">
                     <FileText className="h-4 w-4" />
-                    Systémový log ({logs.main.length})
+                    Chyby programu ({logLines.length})
                   </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="audit" className="mt-3 flex-1 overflow-hidden">
                   <ScrollArea className="h-[360px] rounded-lg border border-border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="hover:bg-transparent">
-                          <TableHead className="whitespace-nowrap">Datum a čas</TableHead>
-                          <TableHead>Kategorie</TableHead>
-                          <TableHead>Aktér</TableHead>
-                          <TableHead>Akce</TableHead>
-                          <TableHead>Detaily</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {logs.audit.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                              Žádné přiložené audit záznamy
-                            </TableCell>
+                    {detailLoading ? (
+                      <div className="flex items-center gap-2 p-4">
+                        <Spinner className="h-4 w-4" />
+                        <span className="text-sm text-muted-foreground">Načítám přílohu...</span>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="hover:bg-transparent">
+                            <TableHead className="whitespace-nowrap">Datum a čas</TableHead>
+                            <TableHead>Kategorie</TableHead>
+                            <TableHead>Aktér</TableHead>
+                            <TableHead>Akce</TableHead>
+                            <TableHead>Detaily</TableHead>
                           </TableRow>
-                        ) : (
-                          logs.audit.map((r, i) => (
-                            <TableRow key={r.id ?? i}>
-                              <TableCell className="whitespace-nowrap text-xs">{fmt(r.created_at)}</TableCell>
-                              <TableCell>
-                                {r.category ? (
-                                  <Badge variant="outline" className="text-[10px]">{r.category}</Badge>
-                                ) : "—"}
-                              </TableCell>
-                              <TableCell className="text-xs">{r.actor || "—"}</TableCell>
-                              <TableCell className="text-xs font-medium">{r.action || "—"}</TableCell>
-                              <TableCell className="max-w-[360px] truncate text-xs" title={r.details || ""}>
-                                {r.details || "—"}
+                        </TableHeader>
+                        <TableBody>
+                          {auditRows.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                                Žádné přiložené záznamy akcí
                               </TableCell>
                             </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
+                          ) : (
+                            auditRows.map((r, i) => (
+                              <TableRow key={r.id ?? i}>
+                                <TableCell className="whitespace-nowrap text-xs">{fmt(r.created_at)}</TableCell>
+                                <TableCell>
+                                  {r.category ? (
+                                    <Badge variant="outline" className="text-[10px]">{r.category}</Badge>
+                                  ) : "—"}
+                                </TableCell>
+                                <TableCell className="text-xs">{r.actor || "—"}</TableCell>
+                                <TableCell className="text-xs font-medium">{r.action || "—"}</TableCell>
+                                <TableCell className="max-w-[360px] truncate text-xs" title={r.details || ""}>
+                                  {r.details || "—"}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    )}
                   </ScrollArea>
                 </TabsContent>
 
                 <TabsContent value="main" className="mt-3 flex-1 overflow-hidden">
                   <ScrollArea className="h-[360px] rounded-lg border border-border">
-                    {logs.main.length === 0 ? (
+                    {detailLoading ? (
+                      <div className="flex items-center gap-2 p-4">
+                        <Spinner className="h-4 w-4" />
+                        <span className="text-sm text-muted-foreground">Načítám přílohu...</span>
+                      </div>
+                    ) : logLines.length === 0 ? (
                       <p className="py-8 text-center text-muted-foreground">
-                        Žádné přiložené systémové záznamy
+                        Žádné přiložené záznamy chyb
                       </p>
                     ) : (
                       <div className="divide-y divide-border font-mono text-xs">
-                        {logs.main.map((line, i) => {
+                        {logLines.map((line, i) => {
                           const p = parseMainLine(line);
                           return (
                             <div key={i} className="flex items-start gap-3 px-3 py-1.5">

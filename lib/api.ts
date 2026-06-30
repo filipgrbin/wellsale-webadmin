@@ -431,6 +431,8 @@ export interface FaultAuditRow {
   created_at?: string;
 }
 
+// List row (GET /api/admin/faults). Lightweight — no json_payload; attachments
+// are fetched per-fault via getFault().
 export interface FaultLog {
   id: number;
   license_key: string;
@@ -440,26 +442,45 @@ export interface FaultLog {
   reason: string;
   resolution: string | null;
   reported_by: string | null;
-  // Attached log excerpts. Either an array of audit rows, or an object that
-  // groups the two log kinds (e.g. { audit: [...], main: [...] }). Parsed on
-  // the client because the exact shape depends on the POS build.
-  json_payload: unknown;
   signature: string | null;
   cert_thumbprint: string | null;
   local_id: number | null;
   created_at: string;
+  branch_name?: string;
+  branch_code?: string;
+  license_owner?: string;
 }
 
-// Admin-only fault list. Requires a backend endpoint
-// (GET /api/admin/faults?licenseKey=&branchId=) returning { ok, faults }.
+// Full fault (GET /api/admin/faults/get). The backend extracts the two
+// attachments from json_payload into top-level arrays for us.
+export interface FaultDetail extends FaultLog {
+  audit_rows: FaultAuditRow[];
+  log_lines: string[];
+  json_payload?: unknown;
+}
+
+// Admin-only fault list. GET /api/admin/faults?licenseKey=&branchId=
 export async function getFaults(params?: {
   licenseKey?: string;
   branchId?: number;
-}): Promise<{ ok: boolean; faults: FaultLog[] }> {
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ ok: boolean; faults: FaultLog[]; total: number; limit: number; offset: number }> {
   const queryParams: Record<string, string> = {};
   if (params?.licenseKey) queryParams.licenseKey = params.licenseKey;
   if (params?.branchId) queryParams.branchId = String(params.branchId);
+  if (params?.from) queryParams.from = params.from;
+  if (params?.to) queryParams.to = params.to;
+  if (params?.limit) queryParams.limit = String(params.limit);
+  if (params?.offset) queryParams.offset = String(params.offset);
   return apiRequest("/api/admin/faults", { params: queryParams });
+}
+
+// Single fault with attachments. GET /api/admin/faults/get?id=
+export async function getFault(id: number): Promise<{ ok: boolean; fault: FaultDetail }> {
+  return apiRequest("/api/admin/faults/get", { params: { id: String(id) } });
 }
 
 export async function decryptBackupOnServer(id: number): Promise<ParsedBackupData> {
