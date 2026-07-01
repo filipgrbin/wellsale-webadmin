@@ -446,6 +446,7 @@ export interface FaultLog {
   cert_thumbprint: string | null;
   local_id: number | null;
   created_at: string;
+  resolved?: boolean;
   branch_name?: string;
   branch_code?: string;
   license_owner?: string;

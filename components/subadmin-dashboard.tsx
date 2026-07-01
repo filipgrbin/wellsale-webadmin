@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SubadminBranches } from "@/components/subadmin-branches";
 import { SubadminBackups } from "@/components/subadmin-backups";
 import { SubadminStats } from "@/components/subadmin-stats";
+import { BranchFaults } from "@/components/branch-faults";
 import { Building2, Database, KeyRound, LayoutDashboard, LogOut, User } from "lucide-react";
 import {
   DropdownMenu,
@@ -137,6 +138,12 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
               </div>
             </div>
             <SubadminStats licenseKey={session.licenseKey} />
+
+            {/* Souhrn všech nahlášených problémů napříč pobočkami */}
+            <BranchFaults
+              licenseKey={session.licenseKey}
+              title="Nahlášené problémy (všechny pobočky)"
+            />
           </TabsContent>
 
           <TabsContent value="branches" className="m-0">

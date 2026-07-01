@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import useSWR from "swr";
-import { getFaults, getFault, type FaultLog } from "@/lib/api";
+import { getFaults, getFault, type FaultLog, type FaultDetail, type FaultAuditRow } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
@@ -31,11 +31,14 @@ import {
   User,
   CheckCircle2,
   ShieldCheck,
+  Building2,
 } from "lucide-react";
 
 interface BranchFaultsProps {
   licenseKey: string;
-  branchId: number;
+  // Omit to list faults across ALL branches of the license (adds a branch column).
+  branchId?: number;
+  title?: string;
 }
 
 interface ParsedMainLine {
@@ -46,7 +49,7 @@ interface ParsedMainLine {
 }
 
 // Main/updater log lines (log_lines) look like:
-//   [2026-06-30T10:14:58.123Z] [ERROR] [printer] tisk selhal: timeout
+//   [2026-07-01T10:14:58.123Z] [ERROR] [printer] tisk selhal: timeout
 function parseMainLine(line: string): ParsedMainLine {
   const full = line.match(/^\s*\[([^\]]+)\]\s*\[([^\]]*)\]\s*\[([^\]]*)\]\s*([\s\S]*)$/);
   if (full) {
@@ -74,12 +77,52 @@ function levelClass(level: string): string {
   return "bg-blue-500/10 text-blue-500 border-blue-500/20";
 }
 
-export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
+function parsePayload(payload: unknown): Record<string, unknown> | null {
+  let data: unknown = payload;
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return null;
+    }
+  }
+  return data && typeof data === "object" && !Array.isArray(data)
+    ? (data as Record<string, unknown>)
+    : null;
+}
+
+// The backend already extracts audit_rows / log_lines to the top level, but
+// fall back to json_payload so nothing is lost if it doesn't (e.g. old build).
+function extractAttachments(detail: FaultDetail | undefined): {
+  audit: FaultAuditRow[];
+  log: string[];
+} {
+  let audit: unknown = detail?.audit_rows;
+  let log: unknown = detail?.log_lines;
+  if ((!Array.isArray(audit) || !Array.isArray(log)) && detail?.json_payload) {
+    const p = parsePayload(detail.json_payload);
+    if (p) {
+      if (!Array.isArray(audit)) audit = p.audit_rows;
+      if (!Array.isArray(log)) log = p.log_lines;
+    }
+  }
+  return {
+    audit: Array.isArray(audit) ? (audit as FaultAuditRow[]) : [],
+    log: Array.isArray(log) ? (log as string[]) : [],
+  };
+}
+
+function isResolved(f: { resolved?: boolean; resolution?: string | null }): boolean {
+  if (typeof f.resolved === "boolean") return f.resolved;
+  return !!f.resolution;
+}
+
+export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps) {
+  const showBranch = branchId == null;
   const { data, isLoading, error } = useSWR(
-    ["branch-faults", licenseKey, branchId],
-    () => getFaults({ licenseKey, branchId })
+    ["branch-faults", licenseKey, branchId ?? "all"],
+    () => getFaults({ licenseKey, branchId, limit: 500 })
   );
-  // The selected list row gives metadata instantly; attachments are fetched.
   const [selected, setSelected] = useState<FaultLog | null>(null);
 
   const { data: detailData, isLoading: detailLoading } = useSWR(
@@ -89,8 +132,7 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
 
   const faults = data?.faults || [];
   const detail = detailData?.fault;
-  const auditRows = detail?.audit_rows ?? [];
-  const logLines = detail?.log_lines ?? [];
+  const { audit: auditRows, log: logLines } = extractAttachments(detail);
 
   return (
     <>
@@ -98,7 +140,7 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <AlertTriangle className="h-5 w-5 text-warning" />
-            Nahlášené chyby a výpadky ({faults.length})
+            {title ?? "Nahlášené chyby a výpadky"} ({faults.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -117,16 +159,17 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Nahlášeno</TableHead>
+                    {showBranch && <TableHead>Pobočka</TableHead>}
                     <TableHead>Výpadek (od – do)</TableHead>
                     <TableHead>Důvod</TableHead>
                     <TableHead>Nahlásil</TableHead>
-                    <TableHead className="w-[90px]">Stav</TableHead>
+                    <TableHead className="w-[110px]">Stav</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {faults.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                      <TableCell colSpan={showBranch ? 6 : 5} className="py-8 text-center text-muted-foreground">
                         Žádné nahlášené chyby
                       </TableCell>
                     </TableRow>
@@ -138,6 +181,14 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
                         onClick={() => setSelected(f)}
                       >
                         <TableCell className="whitespace-nowrap text-sm">{fmt(f.created_at)}</TableCell>
+                        {showBranch && (
+                          <TableCell className="whitespace-nowrap text-sm">
+                            {f.branch_name || `#${f.branch_id}`}
+                            {f.branch_code && (
+                              <code className="ml-1 rounded bg-secondary px-1 py-0.5 text-xs">{f.branch_code}</code>
+                            )}
+                          </TableCell>
+                        )}
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                           {f.issue_start || f.issue_end
                             ? `${fmt(f.issue_start)} – ${f.issue_end ? fmt(f.issue_end) : "trvá"}`
@@ -150,12 +201,12 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
                           {f.reported_by || "—"}
                         </TableCell>
                         <TableCell>
-                          {f.resolution ? (
+                          {isResolved(f) ? (
                             <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                              Vyřešeno
+                              Vyřešené
                             </Badge>
                           ) : (
-                            <Badge variant="secondary">Otevřeno</Badge>
+                            <Badge variant="secondary">Nevyřešené</Badge>
                           )}
                         </TableCell>
                       </TableRow>
@@ -174,9 +225,17 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-warning" />
               Detail nahlášené chyby #{selected?.id}
+              {selected && (
+                isResolved(detail ?? selected) ? (
+                  <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Vyřešené</Badge>
+                ) : (
+                  <Badge variant="secondary">Nevyřešené</Badge>
+                )
+              )}
             </DialogTitle>
             <DialogDescription>
               Nahlášeno {fmt(selected?.created_at)}
+              {showBranch && selected?.branch_name ? ` · ${selected.branch_name}` : ""}
             </DialogDescription>
           </DialogHeader>
 
@@ -184,6 +243,9 @@ export function BranchFaults({ licenseKey, branchId }: BranchFaultsProps) {
             <div className="flex-1 overflow-hidden flex flex-col gap-4">
               {/* Metadata (from the list row, available instantly) */}
               <div className="grid gap-3 sm:grid-cols-2">
+                {showBranch && (
+                  <Detail icon={<Building2 className="h-4 w-4 text-primary" />} label="Pobočka" value={selected.branch_name || `#${selected.branch_id}`} />
+                )}
                 <Detail icon={<CalendarClock className="h-4 w-4 text-primary" />} label="Začátek výpadku" value={fmt(selected.issue_start)} />
                 <Detail icon={<CalendarClock className="h-4 w-4 text-primary" />} label="Konec výpadku" value={selected.issue_end ? fmt(selected.issue_end) : "Trvá / neznámo"} />
                 <Detail icon={<User className="h-4 w-4 text-primary" />} label="Nahlásil" value={selected.reported_by || "—"} />
