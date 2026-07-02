@@ -11,6 +11,7 @@ import {
   type Backup,
 } from "@/lib/api";
 import { decryptWsbak } from "@/lib/wsbak-decrypt";
+import { BackupDownloadDialog } from "@/components/backup-download-dialog";
 import { parseBackupSqlite, type ParsedBackupData, type ProdejRecord, type ProdejPolozka } from "@/lib/sqlite-parser";
 import {
   formatBackupDateTime,
@@ -158,6 +159,7 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
   const [decryptError, setDecryptError] = useState<string | null>(null);
   const [selectedProdej, setSelectedProdej] = useState<ProdejRecord | null>(null);
   const [visiblePinRows, setVisiblePinRows] = useState<Set<string>>(new Set());
+  const [downloadChoice, setDownloadChoice] = useState<Backup | null>(null);
   
   const limit = 20;
 
@@ -208,18 +210,9 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
     }
   };
 
-  const handleDownload = async (backup: Backup) => {
-    setIsDownloading(backup.id);
-    try {
-      const result = await getBackupDownloadUrl(backup.id);
-      if (result.ok && result.downloadUrl) {
-        window.open(result.downloadUrl, "_blank");
-      }
-    } catch (err) {
-      console.error("Failed to get download URL:", err);
-    } finally {
-      setIsDownloading(null);
-    }
+  // Offer a choice between the decrypted .db and the encrypted .wsbak.
+  const handleDownload = (backup: Backup) => {
+    setDownloadChoice(backup);
   };
 
   const handleViewBackup = async (backup: Backup) => {
@@ -526,6 +519,11 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
       </Card>
 
       {/* Backup Viewer Dialog */}
+      <BackupDownloadDialog
+        backup={downloadChoice}
+        onOpenChange={(o) => { if (!o) setDownloadChoice(null); }}
+      />
+
       <Dialog open={!!viewingBackup} onOpenChange={(open) => { 
         if (!open) {
           setViewingBackup(null); 

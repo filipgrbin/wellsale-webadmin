@@ -24,6 +24,7 @@ import {
   isTransactionEventsTable,
 } from "@/lib/backup-preview-utils";
 import { BranchFaults } from "@/components/branch-faults";
+import { BackupDownloadDialog } from "@/components/backup-download-dialog";
 
 interface SubadminSession {
   licenseKey: string;
@@ -156,6 +157,7 @@ export default function BranchDetailPage() {
   const [decryptError, setDecryptError] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [isDownloading, setIsDownloading] = useState<number | null>(null);
+  const [downloadChoice, setDownloadChoice] = useState<Backup | null>(null);
   const [selectedProdej, setSelectedProdej] = useState<{ id: number; cislo_dokladu: string; datum: string; celkem: number; platba_typ: string } | null>(null);
 
   // Fetch branch info - we need to get it from the list of branches using the license key
@@ -260,18 +262,9 @@ export default function BranchDetailPage() {
     }
   };
 
-  const handleDownload = async (backup: Backup) => {
-    setIsDownloading(backup.id);
-    try {
-      const result = await getBackupDownloadUrl(backup.id);
-      if (result.ok && result.downloadUrl) {
-        window.open(result.downloadUrl, "_blank");
-      }
-    } catch (err) {
-      console.error("Failed to get download URL:", err);
-    } finally {
-      setIsDownloading(null);
-    }
+  // Offer a choice between the decrypted .db and the encrypted .wsbak.
+  const handleDownload = (backup: Backup) => {
+    setDownloadChoice(backup);
   };
 
   const copyToClipboard = (text: string) => {
@@ -570,6 +563,11 @@ export default function BranchDetailPage() {
         {/* Nahlášené chyby a výpadky */}
         <BranchFaults licenseKey={session.licenseKey} branchId={branchId} />
       </div>
+
+      <BackupDownloadDialog
+        backup={downloadChoice}
+        onOpenChange={(o) => { if (!o) setDownloadChoice(null); }}
+      />
 
       {/* Backup Viewer Dialog */}
       <Dialog open={!!viewingBackup} onOpenChange={(open) => { if (!open) { setViewingBackup(null); setSelectedProdej(null); } }}>

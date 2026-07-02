@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getLicense, type License } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,11 +14,25 @@ interface SubadminLoginProps {
   onLogin: (session: SubadminSession) => void;
 }
 
+// Strict license format: XXXX-XXXX-XXXX-XXX (4-4-4-3, A-Z / 0-9).
+const LICENSE_RE = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{3}$/;
+
 export function SubadminLogin({ onLogin }: SubadminLoginProps) {
   const [licenseKey, setLicenseKey] = useState("");
   const [loginCode, setLoginCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Prefill the license from ?license=… — but only if it is EXACTLY in the
+  // valid format. Anything malformed is ignored (no tampering via the URL).
+  useEffect(() => {
+    const fromUrl = (new URLSearchParams(window.location.search).get("license") || "")
+      .toUpperCase()
+      .trim();
+    if (LICENSE_RE.test(fromUrl)) {
+      setLicenseKey(fromUrl);
+    }
+  }, []);
 
   const formatLicenseKey = (value: string) => {
     // Remove all non-alphanumeric characters
@@ -49,8 +63,9 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
     e.preventDefault();
     setError(null);
 
-    if (licenseKey.length < 18) {
-      setError("Zadejte platny licencni klic");
+    // Block login for anything outside the strict format (no tampering).
+    if (!LICENSE_RE.test(licenseKey.toUpperCase())) {
+      setError("Zadejte platny licencni klic ve formatu XXXX-XXXX-XXXX-XXX");
       return;
     }
 

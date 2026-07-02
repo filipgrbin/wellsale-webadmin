@@ -107,8 +107,10 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
         { revenue: 0, profit: 0, profitBranches: new Set<number>(), tx: 0, branches: new Set<number>() };
       cur.revenue += Number(meta.total_revenue) || 0;
       cur.tx += Number(meta.tx_count) || 0;
-      const rz = Number(meta.real_zisk);
-      // Only branches whose closure actually carried real_zisk count toward profit.
+      // Only branches whose closure actually carried a real_zisk value count
+      // toward profit. A missing OR null field (branch didn't send it) must NOT
+      // read as 0 — Number(null) === 0, which would falsely count it as profit.
+      const rz = meta.real_zisk == null ? NaN : Number(meta.real_zisk);
       if (Number.isFinite(rz)) {
         cur.profit += rz;
         cur.profitBranches.add(b.branch_id);
@@ -196,7 +198,8 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
           </p>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
             <Store className="h-3.5 w-3.5" />
-            Z {sel.branches.size} {prodejnyLabel(sel.branches.size)}
+            Obrat z {sel.branches.size}
+            {activeBranchCount > 0 ? `/${activeBranchCount}` : ""} {prodejnyLabel(sel.branches.size)}
           </p>
           <div className="mt-3 flex items-center gap-2 text-sm">
             <Receipt className="h-4 w-4 text-muted-foreground" />

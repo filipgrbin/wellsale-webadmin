@@ -4,11 +4,11 @@ import { useState, type ReactNode } from "react";
 import useSWR from "swr";
 import {
   getBackups,
-  getBackupDownloadUrl,
   deleteBackup,
   getBranchDbKey,
   getMachines,
   type Branch,
+  type Backup,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +49,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
 import { BranchFaults } from "@/components/branch-faults";
+import { BackupDownloadDialog } from "@/components/backup-download-dialog";
 
 function formatDate(date: string | null) {
   if (!date) return "—";
@@ -109,7 +110,7 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
   const [dbKeyLoading, setDbKeyLoading] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [downloadChoice, setDownloadChoice] = useState<Backup | null>(null);
 
   const backups = backupsData?.backups || [];
   const machines = (machinesData?.machines || []).filter(
@@ -134,18 +135,6 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
       console.error("Failed to load DB key:", e);
     } finally {
       setDbKeyLoading(false);
-    }
-  };
-
-  const handleDownload = async (id: number) => {
-    setDownloadingId(id);
-    try {
-      const r = await getBackupDownloadUrl(id);
-      if (r.ok && r.downloadUrl) window.open(r.downloadUrl, "_blank");
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Chyba při stahování");
-    } finally {
-      setDownloadingId(null);
     }
   };
 
@@ -300,10 +289,9 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
-                            onClick={() => handleDownload(b.id)}
-                            disabled={downloadingId === b.id}
+                            onClick={() => setDownloadChoice(b)}
                           >
-                            {downloadingId === b.id ? <Spinner className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+                            <Download className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"
@@ -351,6 +339,11 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
       </Card>
 
       <BranchFaults licenseKey={branch.license_key} branchId={branch.id} />
+
+      <BackupDownloadDialog
+        backup={downloadChoice}
+        onOpenChange={(o) => { if (!o) setDownloadChoice(null); }}
+      />
 
       <Dialog open={deleteId != null} onOpenChange={(o) => { if (!o) setDeleteId(null); }}>
         <DialogContent>
