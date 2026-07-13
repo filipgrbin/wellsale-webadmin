@@ -1,21 +1,29 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { getBackups, getLicenses, getBranches } from "@/lib/api";
+import { getBackups, getLicenses, getBranches, type Branch } from "@/lib/api";
 import {
-  aggregateByWeek,
-  aggregateUzaverkyBackups,
-  dayLabel,
+  type ChartGranularity,
+  type RangePreset,
+  branchDataKey,
+  bucketsToRechartsData,
+  buildChartBuckets,
   formatCurrency,
-  lastNDays,
+  getEffectiveDateRange,
+  parseClosureRecords,
   pragueDate,
-  weekLabel,
-  weekStartKey,
+  rangeDayCount,
+  sumRecords,
+  filterRecordsInRange,
 } from "@/lib/turnover-utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -24,42 +32,116 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
-import { TrendingUp, CalendarDays, CalendarRange, Store } from "lucide-react";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
+import { TrendingUp, CalendarDays, CalendarRange, Store, ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-// Same dark green as elsewhere in the app (emerald-600)
 const EMERALD_DARK = "#059669";
 
-const chartConfig = {
-  revenue: { label: "Tržby", color: EMERALD_DARK },
-  profit: { label: "Zisk", color: EMERALD_DARK },
-} satisfies ChartConfig;
-
 interface TurnoverChartsProps {
-  /** When set, scopes data to one license (subadmin). Omit for admin-wide view. */
   licenseKey?: string;
+}
+
+function StackedBranchTooltip({
+  active,
+  payload,
+  label,
+  labels,
+}: {
+  active?: boolean;
+  payload?: Array<{ dataKey?: string; value?: number; color?: string }>;
+  label?: string;
+  labels: Record<string, string>;
+}) {
+  if (!active || !payload?.length) return null;
+  const items = payload.filter((p) => Number(p.value) > 0);
+  if (!items.length) return null;
+  const total = items.reduce((s, p) => s + Number(p.value ?? 0), 0);
+  return (
+    <div className="border-border/50 bg-background min-w-[10rem] rounded-lg border px-3 py-2 text-xs shadow-xl">
+      <p className="font-medium mb-1.5">{label}</p>
+      <div className="space-y-1">
+        {items.map((p) => (
+          <div key={p.dataKey} className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-1.5">
+              <span
+                className="h-2 w-2 rounded-sm shrink-0"
+                style={{ backgroundColor: p.color }}
+              />
+              {labels[p.dataKey ?? ""] ?? p.dataKey}
+            </span>
+            <span className="font-medium tabular-nums">{formatCurrency(Number(p.value))}</span>
+          </div>
+        ))}
+      </div>
+      {items.length > 1 && (
+        <p className="mt-1.5 pt-1.5 border-t border-border font-medium">
+          Celkem {formatCurrency(total)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SimpleTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value?: number }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="border-border/50 bg-background rounded-lg border px-3 py-2 text-xs shadow-xl">
+      <p className="font-medium mb-0.5">{label}</p>
+      <p className="text-emerald-600 font-semibold">{formatCurrency(Number(payload[0].value))}</p>
+    </div>
+  );
 }
 
 export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsProps) {
   const isSubadmin = Boolean(fixedLicenseKey);
+  const today = pragueDate(new Date());
+
   const [licenseFilter, setLicenseFilter] = useState<string>("all");
-  const [chartTab, setChartTab] = useState<"daily" | "weekly">("daily");
+  const [rangePreset, setRangePreset] = useState<RangePreset>("week");
+  const [customFrom, setCustomFrom] = useState(today);
+  const [customTo, setCustomTo] = useState(today);
+  const [granularity, setGranularity] = useState<ChartGranularity>("day");
+  const [allBranches, setAllBranches] = useState(true);
+  const [selectedBranchIds, setSelectedBranchIds] = useState<Set<number>>(new Set());
 
   const effectiveLicense =
     fixedLicenseKey ?? (licenseFilter !== "all" ? licenseFilter : undefined);
 
+  const { from, to } = getEffectiveDateRange(rangePreset, customFrom, customTo);
+  const dayCount = rangeDayCount(from, to);
+  const canUseHourly = dayCount <= 1;
+
+  useEffect(() => {
+    if (rangePreset === "today" && canUseHourly) {
+      setGranularity("hour");
+    } else if (rangePreset === "month") {
+      setGranularity("month");
+    } else if (rangePreset === "week") {
+      setGranularity("day");
+    }
+  }, [rangePreset, canUseHourly]);
+
   const { data: backupsData, isLoading } = useSWR(
-    ["turnover-charts", effectiveLicense ?? "all"],
+    ["turnover-charts", effectiveLicense ?? "all", from, to],
     () =>
       getBackups({
         kind: "uzaverka",
         limit: 500,
+        from,
+        to,
         ...(effectiveLicense ? { licenseKey: effectiveLicense } : {}),
       })
   );
@@ -70,97 +152,97 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
     () => getBranches(fixedLicenseKey)
   );
 
-  const activeBranchCount = (branchesData?.branches ?? []).filter((b) => !b.archived_at).length;
+  const availableBranches = useMemo(() => {
+    const list = (branchesData?.branches ?? []).filter((b) => !b.archived_at);
+    if (effectiveLicense) {
+      return list.filter((b) => b.license_key === effectiveLicense);
+    }
+    return list;
+  }, [branchesData, effectiveLicense]);
 
-  const byDate = useMemo(() => {
-    const backups = backupsData?.backups ?? [];
-    const filter = effectiveLicense ? { licenseKey: effectiveLicense } : undefined;
-    return aggregateUzaverkyBackups(backups, filter);
-  }, [backupsData, effectiveLicense]);
+  const branchMeta = useMemo(() => {
+    const m = new Map<number, { id: number; code: string; name: string }>();
+    for (const b of availableBranches) {
+      m.set(b.id, { id: b.id, code: b.code, name: b.name });
+    }
+    for (const bk of backupsData?.backups ?? []) {
+      if (!m.has(bk.branch_id)) {
+        m.set(bk.branch_id, {
+          id: bk.branch_id,
+          code: bk.branch_code || `#${bk.branch_id}`,
+          name: bk.branch_name || `Pobočka ${bk.branch_id}`,
+        });
+      }
+    }
+    return m;
+  }, [availableBranches, backupsData]);
 
-  const byWeek = useMemo(() => aggregateByWeek(byDate), [byDate]);
+  const activeBranchIds = useMemo((): number[] | null => {
+    if (allBranches) return null;
+    return [...selectedBranchIds];
+  }, [allBranches, selectedBranchIds]);
 
-  const dailyDays = useMemo(() => [...lastNDays(14)].reverse(), []);
-  const weeklyKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const d of byDate.keys()) keys.add(weekStartKey(d));
-    for (const d of lastNDays(56)) keys.add(weekStartKey(d));
-    return [...keys].sort().slice(-8);
-  }, [byDate]);
-
-  const dailyChartData = useMemo(
+  const allRecords = useMemo(
     () =>
-      dailyDays.map((date) => {
-        const v = byDate.get(date);
-        const { dm } = dayLabel(date);
-        return {
-          date,
-          label: dm,
-          revenue: v?.revenue ?? 0,
-          profit: v?.profitBranches.size ? v.profit : 0,
-        };
+      parseClosureRecords(backupsData?.backups ?? [], {
+        licenseKey: effectiveLicense,
+        branchIds: activeBranchIds,
       }),
-    [dailyDays, byDate]
+    [backupsData, effectiveLicense, activeBranchIds]
   );
 
-  const weeklyChartData = useMemo(
-    () =>
-      weeklyKeys.map((wk) => {
-        const v = byWeek.get(wk);
-        return {
-          week: wk,
-          label: weekLabel(wk),
-          revenue: v?.revenue ?? 0,
-          profit: v?.profitBranches.size ? v.profit : 0,
-        };
-      }),
-    [weeklyKeys, byWeek]
+  const rangeRecords = useMemo(
+    () => filterRecordsInRange(allRecords, from, to),
+    [allRecords, from, to]
   );
 
-  const today = dailyDays[dailyDays.length - 1] ?? pragueDate(new Date());
-  const todayAgg = byDate.get(today) ?? {
-    revenue: 0,
-    profit: 0,
-    profitBranches: new Set<number>(),
-    tx: 0,
-    branches: new Set<number>(),
+  const rangeSummary = useMemo(() => sumRecords(rangeRecords), [rangeRecords]);
+
+  const buckets = useMemo(
+    () => buildChartBuckets(allRecords, granularity, from, to),
+    [allRecords, granularity, from, to]
+  );
+
+  const stacked = allBranches;
+
+  const chartOutput = useMemo(
+    () => bucketsToRechartsData(buckets, branchMeta, stacked),
+    [buckets, branchMeta, stacked]
+  );
+
+  const chartConfig = useMemo(() => {
+    const cfg: ChartConfig = { revenue: { label: "Tržby", color: EMERALD_DARK } };
+    for (const [key, label] of Object.entries(chartOutput.labels)) {
+      cfg[key] = { label, color: chartOutput.colors[key] };
+    }
+    return cfg;
+  }, [chartOutput]);
+
+  const toggleBranch = (id: number) => {
+    setSelectedBranchIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
-  const weekTotal = useMemo(() => {
-    let revenue = 0;
-    let profit = 0;
-    let profitKnown = false;
-    for (const d of lastNDays(7)) {
-      const v = byDate.get(d);
-      if (!v) continue;
-      revenue += v.revenue;
-      if (v.profitBranches.size > 0) {
-        profit += v.profit;
-        profitKnown = true;
-      }
-    }
-    return { revenue, profit, profitKnown };
-  }, [byDate]);
+  const branchPickerLabel = allBranches
+    ? "Všechny prodejny"
+    : selectedBranchIds.size === 0
+      ? "Všechny prodejny"
+      : `${selectedBranchIds.size} prodejen`;
 
-  const monthPrefix = pragueDate(new Date()).slice(0, 7);
-  const monthTotal = useMemo(() => {
-    let revenue = 0;
-    let profit = 0;
-    let profitKnown = false;
-    for (const [d, v] of byDate) {
-      if (!d.startsWith(monthPrefix)) continue;
-      revenue += v.revenue;
-      if (v.profitBranches.size > 0) {
-        profit += v.profit;
-        profitKnown = true;
-      }
-    }
-    return { revenue, profit, profitKnown };
-  }, [byDate, monthPrefix]);
+  const presetLabel: Record<RangePreset, string> = {
+    today: "Dnes",
+    week: "Tento týden",
+    month: "Tento měsíc",
+    custom: "Vlastní rozsah",
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
@@ -168,55 +250,144 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           </h3>
           <p className="text-sm text-muted-foreground">
             {isSubadmin
-              ? "Denní a týdenní přehled tržeb z vašich prodejen"
-              : "Agregace z denních uzávěrek napříč pobočkami"}
+              ? "Intradenní, denní a měsíční přehled s výběrem prodejen"
+              : "Agregace z uzávěrek napříč pobočkami a licencemi"}
           </p>
         </div>
-        {!isSubadmin && (
-          <Select value={licenseFilter} onValueChange={setLicenseFilter}>
-            <SelectTrigger className="w-full sm:w-[280px]">
-              <SelectValue placeholder="Filtr licence" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Všechny licence</SelectItem>
-              {(licensesData?.licenses ?? []).map((l) => (
-                <SelectItem key={l.license_key} value={l.license_key}>
-                  {l.owner_name} ({l.license_key.slice(0, 8)}…)
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          {!isSubadmin && (
+            <Select value={licenseFilter} onValueChange={setLicenseFilter}>
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue placeholder="Licence" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Všechny licence</SelectItem>
+                {(licensesData?.licenses ?? []).map((l) => (
+                  <SelectItem key={l.license_key} value={l.license_key}>
+                    {l.owner_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-full sm:w-auto justify-between gap-2">
+                <Store className="h-4 w-4 shrink-0" />
+                {branchPickerLabel}
+                <ChevronDown className="h-4 w-4 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-3" align="end">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="all-branches"
+                    checked={allBranches}
+                    onCheckedChange={(c) => {
+                      setAllBranches(c === true);
+                      if (c) setSelectedBranchIds(new Set());
+                    }}
+                  />
+                  <Label htmlFor="all-branches" className="cursor-pointer font-medium">
+                    Všechny prodejny (skládaný graf)
+                  </Label>
+                </div>
+                {!allBranches && (
+                  <div className="max-h-48 overflow-y-auto space-y-2 border-t border-border pt-2">
+                    {availableBranches.map((b: Branch) => (
+                      <div key={b.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`branch-${b.id}`}
+                          checked={selectedBranchIds.has(b.id)}
+                          onCheckedChange={() => toggleBranch(b.id)}
+                        />
+                        <Label htmlFor={`branch-${b.id}`} className="cursor-pointer text-sm">
+                          <span className="font-medium">{b.code}</span>
+                          <span className="text-muted-foreground"> — {b.name}</span>
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
 
+      {/* Range presets */}
+      <div className="flex flex-wrap gap-2">
+        {(["today", "week", "month", "custom"] as RangePreset[]).map((p) => (
+          <Button
+            key={p}
+            variant={rangePreset === p ? "default" : "outline"}
+            size="sm"
+            onClick={() => setRangePreset(p)}
+          >
+            {presetLabel[p]}
+          </Button>
+        ))}
+      </div>
+
+      {rangePreset === "custom" && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="from-date" className="text-xs">
+              Od
+            </Label>
+            <Input
+              id="from-date"
+              type="date"
+              value={customFrom}
+              max={customTo}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="w-[160px]"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="to-date" className="text-xs">
+              Do
+            </Label>
+            <Input
+              id="to-date"
+              type="date"
+              value={customTo}
+              min={customFrom}
+              max={today}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="w-[160px]"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Summary for selected range */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Dnes</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              {presetLabel[rangePreset]} — tržby
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(todayAgg.revenue)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(rangeSummary.revenue)}</div>
             <p className="text-xs text-emerald-500 mt-1">
-              zisk {todayAgg.profitBranches.size > 0 ? formatCurrency(todayAgg.profit) : "—"}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-              <Store className="h-3 w-3" />
-              {todayAgg.branches.size}
-              {activeBranchCount > 0 ? `/${activeBranchCount}` : ""} poboček · {todayAgg.tx} transakcí
+              zisk {rangeSummary.profitKnown ? formatCurrency(rangeSummary.profit) : "—"}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-              <CalendarDays className="h-3.5 w-3.5" />
-              Posledních 7 dní
+              <Store className="h-3.5 w-3.5" />
+              Pobočky v rozsahu
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(weekTotal.revenue)}</div>
-            <p className="text-xs text-emerald-500 mt-1">
-              zisk {weekTotal.profitKnown ? formatCurrency(weekTotal.profit) : "—"}
+            <div className="text-2xl font-bold">{rangeSummary.branches.size}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {rangeSummary.tx} transakcí celkem
             </p>
           </CardContent>
         </Card>
@@ -224,13 +395,15 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
               <CalendarRange className="h-3.5 w-3.5" />
-              Tento měsíc
+              Období
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(monthTotal.revenue)}</div>
-            <p className="text-xs text-emerald-500 mt-1">
-              zisk {monthTotal.profitKnown ? formatCurrency(monthTotal.profit) : "—"}
+            <div className="text-lg font-bold">
+              {from === to ? from : `${from} — ${to}`}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {dayCount} {dayCount === 1 ? "den" : dayCount < 5 ? "dny" : "dní"}
             </p>
           </CardContent>
         </Card>
@@ -238,88 +411,128 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Grafy tržeb</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            <CalendarDays className="h-4 w-4" />
+            Graf tržeb
+          </CardTitle>
           <CardDescription>
-            {isLoading ? "Načítání dat…" : "Denní a týdenní přehled z uzávěrek"}
+            {isLoading
+              ? "Načítání dat…"
+              : allBranches && chartOutput.stacked
+                ? "Skládaný sloupec = prodejny v daném období (najeď pro kód a částku)"
+                : "Tržby z uzávěrek ve zvoleném rozsahu"}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={chartTab} onValueChange={(v) => setChartTab(v as "daily" | "weekly")}>
+          <Tabs
+            value={granularity}
+            onValueChange={(v) => setGranularity(v as ChartGranularity)}
+          >
             <TabsList className="mb-4">
-              <TabsTrigger value="daily">Denní (14 dní)</TabsTrigger>
-              <TabsTrigger value="weekly">Týdenní (8 týdnů)</TabsTrigger>
+              <TabsTrigger value="hour" disabled={!canUseHourly}>
+                Intradenní
+              </TabsTrigger>
+              <TabsTrigger value="day">Denní</TabsTrigger>
+              <TabsTrigger value="month">Měsíční</TabsTrigger>
             </TabsList>
-            <TabsContent value="daily">
-              <ChartContainer config={chartConfig} className="h-[300px] w-full">
-                <BarChart data={dailyChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={11} />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={11}
-                    tickFormatter={(v) => `${Math.round(v / 1000)}k`}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        formatter={(value, name) => [
-                          formatCurrency(Number(value)),
-                          name === "revenue" ? "Tržby" : "Zisk",
-                        ]}
+
+            {(["hour", "day", "month"] as ChartGranularity[]).map((g) => (
+              <TabsContent key={g} value={g}>
+                {!allBranches && selectedBranchIds.size === 0 ? (
+                  <p className="text-sm text-muted-foreground py-12 text-center">
+                    Vyberte alespoň jednu prodejnu v seznamu výše
+                  </p>
+                ) : chartOutput.rows.every((r) => Number(r.total) === 0) ? (
+                  <p className="text-sm text-muted-foreground py-12 text-center">
+                    V tomto období nejsou žádné uzávěrky
+                  </p>
+                ) : (
+                  <ChartContainer config={chartConfig} className="h-[320px] w-full">
+                    <BarChart
+                      data={chartOutput.rows}
+                      margin={{ top: 8, right: 8, left: 0, bottom: g === "month" ? 40 : 0 }}
+                    >
+                      <CartesianGrid vertical={false} />
+                      <XAxis
+                        dataKey="label"
+                        tickLine={false}
+                        axisLine={false}
+                        fontSize={11}
+                        interval={g === "hour" ? 1 : g === "day" && chartOutput.rows.length > 20 ? 2 : 0}
+                        angle={g === "month" ? -25 : 0}
+                        textAnchor={g === "month" ? "end" : "middle"}
+                        height={g === "month" ? 50 : 30}
                       />
-                    }
-                  />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Bar dataKey="revenue" fill={EMERALD_DARK} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="profit" fill={EMERALD_DARK} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
-            </TabsContent>
-            <TabsContent value="weekly">
-              <ChartContainer config={chartConfig} className="h-[300px] w-full">
-                <BarChart data={weeklyChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={10}
-                    interval={0}
-                    angle={-20}
-                    textAnchor="end"
-                    height={50}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={11}
-                    tickFormatter={(v) => `${Math.round(v / 1000)}k`}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        formatter={(value, name) => [
-                          formatCurrency(Number(value)),
-                          name === "revenue" ? "Tržby" : "Zisk",
-                        ]}
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        fontSize={11}
+                        tickFormatter={(v) => `${Math.round(Number(v) / 1000)}k`}
                       />
-                    }
-                  />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Bar dataKey="revenue" fill={EMERALD_DARK} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="profit" fill={EMERALD_DARK} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
-            </TabsContent>
+                      <ChartTooltip
+                        content={
+                          chartOutput.stacked ? (
+                            <StackedBranchTooltip labels={chartOutput.labels} />
+                          ) : (
+                            <SimpleTooltip />
+                          )
+                        }
+                      />
+                      {chartOutput.stacked ? (
+                        chartOutput.branchIds.map((id) => (
+                          <Bar
+                            key={id}
+                            dataKey={branchDataKey(id)}
+                            stackId="branches"
+                            fill={chartOutput.colors[branchDataKey(id)]}
+                            radius={0}
+                          />
+                        ))
+                      ) : (
+                        <Bar
+                          dataKey="revenue"
+                          fill={EMERALD_DARK}
+                          radius={[4, 4, 0, 0]}
+                        />
+                      )}
+                    </BarChart>
+                  </ChartContainer>
+                )}
+
+                {chartOutput.stacked && chartOutput.branchIds.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    {chartOutput.branchIds.map((id) => {
+                      const key = branchDataKey(id);
+                      return (
+                        <div key={id} className="flex items-center gap-1.5 text-xs">
+                          <span
+                            className="h-2.5 w-2.5 rounded-sm"
+                            style={{ backgroundColor: chartOutput.colors[key] }}
+                          />
+                          <span className="font-medium">{chartOutput.labels[key]}</span>
+                          <span className="text-muted-foreground truncate max-w-[120px]">
+                            {branchMeta.get(id)?.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </TabsContent>
+            ))}
           </Tabs>
+
+          {!canUseHourly && (
+            <p className={cn("text-xs text-muted-foreground mt-2")}>
+              Intradenní přehled je dostupný jen pro rozsah jednoho dne (např. „Dnes“ nebo vlastní od–do stejný den).
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
 
-/** @deprecated Use TurnoverCharts instead */
 export function AdminTurnoverCharts() {
   return <TurnoverCharts />;
 }

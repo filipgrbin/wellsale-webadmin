@@ -515,13 +515,16 @@ export async function makeNotification(data: {
   message: string;
   priority?: NotificationPriority;
   expires_at?: string | null;
-  admin_only?: boolean;
+  admin_only: boolean;
   license_key?: string;
   branch_id?: number;
 }): Promise<{ ok: boolean; notification: Notification }> {
   return apiRequest("/api/admin/notifications/make", {
     method: "POST",
-    body: data,
+    body: {
+      ...data,
+      admin_only: data.admin_only === true,
+    },
   });
 }
 

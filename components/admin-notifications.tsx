@@ -47,7 +47,7 @@ import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
 import { toast } from "sonner";
 
-type TargetType = "all" | "license" | "branch";
+type TargetType = "all" | "license" | "branch" | "admin";
 
 const priorityLabels: Record<NotificationPriority, string> = {
   low: "Nízká",
@@ -64,6 +64,7 @@ const priorityVariants: Record<NotificationPriority, "secondary" | "default" | "
 };
 
 function targetLabel(n: Notification): string {
+  if (n.admin_only) return "Pouze admin panel";
   if (n.branch_id) return `Pobočka #${n.branch_id}${n.branch_name ? ` (${n.branch_name})` : ""}`;
   if (n.license_key) return `Licence ${n.license_key.slice(0, 12)}…`;
   return "Všechny pokladny";
@@ -81,7 +82,6 @@ export function AdminNotifications() {
   const [message, setMessage] = useState("");
   const [priority, setPriority] = useState<NotificationPriority>("medium");
   const [expiresAt, setExpiresAt] = useState("");
-  const [adminOnly, setAdminOnly] = useState(false);
   const [sending, setSending] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
@@ -107,14 +107,15 @@ export function AdminNotifications() {
 
     setSending(true);
     try {
+      const isAdminOnly = targetType === "admin";
       await makeNotification({
         title: title.trim(),
         message: message.trim(),
         priority,
         expires_at: expiresAt || null,
-        admin_only: adminOnly,
-        ...(targetType === "license" ? { license_key: licenseKey } : {}),
-        ...(targetType === "branch" ? { branch_id: Number(branchId) } : {}),
+        admin_only: isAdminOnly,
+        ...(targetType === "license" && !isAdminOnly ? { license_key: licenseKey } : {}),
+        ...(targetType === "branch" && !isAdminOnly ? { branch_id: Number(branchId) } : {}),
       });
       toast.success("Oznámení odesláno");
       setTitle("");
@@ -150,14 +151,18 @@ export function AdminNotifications() {
           Oznámení na pokladny
         </h2>
         <p className="text-muted-foreground">
-          Odesílání oznámení na všechny pokladny, vybranou licenci nebo pobočku
+          Oznámení na pokladny, vybranou licenci, pobočku nebo pouze do admin panelu
         </p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Nové oznámení</CardTitle>
-          <CardDescription>Zpráva se zobrazí na pokladnách při příštím načtení</CardDescription>
+          <CardDescription>
+            {targetType === "admin"
+              ? "Zpráva se uloží s admin_only=true — zobrazí se jen v admin panelu, ne na pokladnách"
+              : "Zpráva se zobrazí na pokladnách při příštím načtení"}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -178,6 +183,7 @@ export function AdminNotifications() {
                   <SelectItem value="all">Všechny pokladny</SelectItem>
                   <SelectItem value="license">Vybraná licence (všechny prodejny)</SelectItem>
                   <SelectItem value="branch">Vybraná pobočka</SelectItem>
+                  <SelectItem value="admin">Pouze pro adminy (webadmin)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -282,28 +288,15 @@ export function AdminNotifications() {
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="notif-expires">Platnost do (volitelné)</Label>
-              <Input
-                id="notif-expires"
-                type="datetime-local"
-                value={expiresAt}
-                onChange={(e) => setExpiresAt(e.target.value)}
-              />
-            </div>
-            <div className="flex items-end gap-2 pb-1">
-              <input
-                type="checkbox"
-                id="admin-only"
-                checked={adminOnly}
-                onChange={(e) => setAdminOnly(e.target.checked)}
-                className="rounded border-border"
-              />
-              <Label htmlFor="admin-only" className="cursor-pointer">
-                Pouze pro admin panel (ne na pokladny)
-              </Label>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="notif-expires">Platnost do (volitelné)</Label>
+            <Input
+              id="notif-expires"
+              type="datetime-local"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              className="max-w-xs"
+            />
           </div>
 
           <Button onClick={handleSend} disabled={sending} className="gap-2">
