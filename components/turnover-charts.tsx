@@ -33,34 +33,50 @@ import {
 } from "@/components/ui/chart";
 import { TrendingUp, CalendarDays, CalendarRange, Store } from "lucide-react";
 
+// Same dark green as elsewhere in the app (emerald-600)
+const EMERALD_DARK = "#059669";
+
 const chartConfig = {
-  revenue: { label: "Tržby", color: "hsl(var(--chart-1))" },
-  profit: { label: "Zisk", color: "hsl(var(--chart-2))" },
+  revenue: { label: "Tržby", color: EMERALD_DARK },
+  profit: { label: "Zisk", color: EMERALD_DARK },
 } satisfies ChartConfig;
 
-export function AdminTurnoverCharts() {
+interface TurnoverChartsProps {
+  /** When set, scopes data to one license (subadmin). Omit for admin-wide view. */
+  licenseKey?: string;
+}
+
+export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsProps) {
+  const isSubadmin = Boolean(fixedLicenseKey);
   const [licenseFilter, setLicenseFilter] = useState<string>("all");
   const [chartTab, setChartTab] = useState<"daily" | "weekly">("daily");
 
+  const effectiveLicense =
+    fixedLicenseKey ?? (licenseFilter !== "all" ? licenseFilter : undefined);
+
   const { data: backupsData, isLoading } = useSWR(
-    ["admin-turnover", licenseFilter],
+    ["turnover-charts", effectiveLicense ?? "all"],
     () =>
       getBackups({
         kind: "uzaverka",
         limit: 500,
-        ...(licenseFilter !== "all" ? { licenseKey: licenseFilter } : {}),
+        ...(effectiveLicense ? { licenseKey: effectiveLicense } : {}),
       })
   );
-  const { data: licensesData } = useSWR("licenses", getLicenses);
-  const { data: branchesData } = useSWR("all-branches", () => getBranches());
+
+  const { data: licensesData } = useSWR(isSubadmin ? null : "licenses", getLicenses);
+  const { data: branchesData } = useSWR(
+    isSubadmin ? ["turnover-branches", fixedLicenseKey] : "all-branches",
+    () => getBranches(fixedLicenseKey)
+  );
 
   const activeBranchCount = (branchesData?.branches ?? []).filter((b) => !b.archived_at).length;
 
   const byDate = useMemo(() => {
     const backups = backupsData?.backups ?? [];
-    const filter = licenseFilter !== "all" ? { licenseKey: licenseFilter } : undefined;
+    const filter = effectiveLicense ? { licenseKey: effectiveLicense } : undefined;
     return aggregateUzaverkyBackups(backups, filter);
-  }, [backupsData, licenseFilter]);
+  }, [backupsData, effectiveLicense]);
 
   const byWeek = useMemo(() => aggregateByWeek(byDate), [byDate]);
 
@@ -151,22 +167,26 @@ export function AdminTurnoverCharts() {
             Analýza tržeb z uzávěrek
           </h3>
           <p className="text-sm text-muted-foreground">
-            Agregace z denních uzávěrek napříč pobočkami
+            {isSubadmin
+              ? "Denní a týdenní přehled tržeb z vašich prodejen"
+              : "Agregace z denních uzávěrek napříč pobočkami"}
           </p>
         </div>
-        <Select value={licenseFilter} onValueChange={setLicenseFilter}>
-          <SelectTrigger className="w-full sm:w-[280px]">
-            <SelectValue placeholder="Filtr licence" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Všechny licence</SelectItem>
-            {(licensesData?.licenses ?? []).map((l) => (
-              <SelectItem key={l.license_key} value={l.license_key}>
-                {l.owner_name} ({l.license_key.slice(0, 8)}…)
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {!isSubadmin && (
+          <Select value={licenseFilter} onValueChange={setLicenseFilter}>
+            <SelectTrigger className="w-full sm:w-[280px]">
+              <SelectValue placeholder="Filtr licence" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Všechny licence</SelectItem>
+              {(licensesData?.licenses ?? []).map((l) => (
+                <SelectItem key={l.license_key} value={l.license_key}>
+                  {l.owner_name} ({l.license_key.slice(0, 8)}…)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -251,8 +271,8 @@ export function AdminTurnoverCharts() {
                     }
                   />
                   <ChartLegend content={<ChartLegendContent />} />
-                  <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="profit" fill="var(--color-profit)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="revenue" fill={EMERALD_DARK} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="profit" fill={EMERALD_DARK} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ChartContainer>
             </TabsContent>
@@ -287,8 +307,8 @@ export function AdminTurnoverCharts() {
                     }
                   />
                   <ChartLegend content={<ChartLegendContent />} />
-                  <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="profit" fill="var(--color-profit)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="revenue" fill={EMERALD_DARK} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="profit" fill={EMERALD_DARK} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ChartContainer>
             </TabsContent>
@@ -297,4 +317,9 @@ export function AdminTurnoverCharts() {
       </Card>
     </div>
   );
+}
+
+/** @deprecated Use TurnoverCharts instead */
+export function AdminTurnoverCharts() {
+  return <TurnoverCharts />;
 }

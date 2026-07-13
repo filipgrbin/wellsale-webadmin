@@ -5,6 +5,7 @@ import { getBranches, getBackupsStats, getMachines } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, Database, Monitor, HardDrive } from "lucide-react";
 import { SubadminTurnover } from "@/components/subadmin-turnover";
+import { TurnoverCharts } from "@/components/turnover-charts";
 
 interface SubadminStatsProps {
   licenseKey: string;
@@ -44,6 +45,8 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
     <div className="space-y-6">
       {/* Turnover: today + last 7 days switcher + week/month totals */}
       <SubadminTurnover licenseKey={licenseKey} />
+
+      <TurnoverCharts licenseKey={licenseKey} />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border bg-card">

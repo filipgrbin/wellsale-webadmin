@@ -12,7 +12,7 @@ import { AdminBranchDetail } from "@/components/admin-branch-detail";
 import { MachinesTable } from "@/components/machines-table";
 import { LicenseDetail } from "@/components/license-detail";
 import { AdminBackupsTable } from "@/components/admin-backups-table";
-import { AdminTurnoverCharts } from "@/components/admin-turnover-charts";
+import { AdminTurnoverCharts } from "@/components/turnover-charts";
 import { AdminNotifications } from "@/components/admin-notifications";
 import { Key, Building2, Monitor, LayoutDashboard, Database, LogOut, Bell } from "lucide-react";
 
