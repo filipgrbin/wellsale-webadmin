@@ -17,6 +17,15 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Backup decrypt/download routes authenticate via x-admin-key internally
+  // (subadmin panel also uses these for preview without an admin cookie).
+  if (
+    pathname === "/api/admin/backups/decrypt" ||
+    pathname === "/api/admin/backups/download"
+  ) {
+    return NextResponse.next();
+  }
+
   // Admin login page: if already authenticated as admin, skip straight to the
   // dashboard. A subadmin (no admin cookie) won't match this and still sees the
   // password prompt — so a subadmin session can't slip into the admin area.

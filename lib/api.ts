@@ -484,6 +484,54 @@ export async function getFault(id: number): Promise<{ ok: boolean; fault: FaultD
   return apiRequest("/api/admin/faults/get", { params: { id: String(id) } });
 }
 
+// Notifications
+export type NotificationPriority = "low" | "medium" | "high" | "immediate";
+
+export interface Notification {
+  id: number;
+  title: string;
+  message: string;
+  priority: NotificationPriority;
+  admin_only: boolean;
+  license_key?: string | null;
+  branch_id?: number | null;
+  branch_name?: string | null;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export async function getNotifications(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<{ ok: boolean; notifications: Notification[]; total: number }> {
+  const queryParams: Record<string, string> = {};
+  if (params?.limit) queryParams.limit = String(params.limit);
+  if (params?.offset) queryParams.offset = String(params.offset);
+  return apiRequest("/api/admin/notifications", { params: queryParams });
+}
+
+export async function makeNotification(data: {
+  title: string;
+  message: string;
+  priority?: NotificationPriority;
+  expires_at?: string | null;
+  admin_only?: boolean;
+  license_key?: string;
+  branch_id?: number;
+}): Promise<{ ok: boolean; notification: Notification }> {
+  return apiRequest("/api/admin/notifications/make", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function deleteNotification(id: number): Promise<{ ok: boolean; deleted: Notification }> {
+  return apiRequest("/api/admin/notifications/delete", {
+    method: "POST",
+    body: { id },
+  });
+}
+
 export async function decryptBackupOnServer(id: number): Promise<ParsedBackupData> {
   const response = await fetch(`/api/admin/backups/decrypt?id=${id}`, {
     headers: {

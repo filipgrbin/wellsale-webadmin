@@ -7,12 +7,12 @@ import {
   getBranches, 
   getBranchDbKey, 
   getBackups,
-  getBackupDownloadUrl,
+  decryptBackupOnServer,
   type Branch,
   type Backup,
+  type ParsedBackupData,
 } from "@/lib/api";
-import { decryptWsbak } from "@/lib/wsbak-decrypt";
-import { parseBackupSqlite, type ParsedBackupData, type ProdejRecord, type ProdejPolozka } from "@/lib/sqlite-parser";
+import { type ProdejRecord, type ProdejPolozka } from "@/lib/sqlite-parser";
 import {
   formatBackupDateTime,
   formatPaymentType,
@@ -224,37 +224,10 @@ export default function BranchDetailPage() {
     setDecryptError(null);
     setIsDecrypting(true);
     setSelectedProdej(null);
-    
+
     try {
-      // Get download URL
-      const urlResult = await getBackupDownloadUrl(backup.id);
-      if (!urlResult.ok || !urlResult.downloadUrl) {
-        throw new Error("Nelze ziskat URL pro stazeni");
-      }
-      
-      // Download the file
-      const response = await fetch(urlResult.downloadUrl);
-      if (!response.ok) {
-        throw new Error("Nelze stahnout soubor");
-      }
-      const fileData = await response.arrayBuffer();
-      
-      // Check if it's a .db file (no decryption needed) or .wsbak (needs decryption)
-      if (backup.file_name.endsWith(".db")) {
-        // Direct SQLite parsing without decryption
-        const parsed = await parseBackupSqlite(new Uint8Array(fileData));
-        setDecryptedData(parsed);
-      } else {
-        // Decrypt .wsbak files
-        const decryptResult = await decryptWsbak(fileData, backup.license_key);
-        if (!decryptResult.success || !decryptResult.data) {
-          throw new Error(decryptResult.error || "Desifrování selhalo");
-        }
-        
-        // Parse SQLite
-        const parsed = await parseBackupSqlite(decryptResult.data);
-        setDecryptedData(parsed);
-      }
+      const parsed = await decryptBackupOnServer(backup.id);
+      setDecryptedData(parsed);
     } catch (err) {
       setDecryptError(err instanceof Error ? err.message : "Neznama chyba");
     } finally {

@@ -12,7 +12,9 @@ import { AdminBranchDetail } from "@/components/admin-branch-detail";
 import { MachinesTable } from "@/components/machines-table";
 import { LicenseDetail } from "@/components/license-detail";
 import { AdminBackupsTable } from "@/components/admin-backups-table";
-import { Key, Building2, Monitor, LayoutDashboard, Settings, Database, LogOut } from "lucide-react";
+import { AdminTurnoverCharts } from "@/components/admin-turnover-charts";
+import { AdminNotifications } from "@/components/admin-notifications";
+import { Key, Building2, Monitor, LayoutDashboard, Database, LogOut, Bell } from "lucide-react";
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -118,10 +120,15 @@ export default function AdminDashboard() {
               <Database className="h-4 w-4" />
               Zalohy
             </TabsTrigger>
+            <TabsTrigger value="notifications" className="gap-2">
+              <Bell className="h-4 w-4" />
+              Oznámení
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6 m-0">
             <DashboardStats />
+            <AdminTurnoverCharts />
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Licence</h3>
               <LicensesTable onSelectLicense={handleSelectLicense} />
@@ -178,6 +185,10 @@ export default function AdminDashboard() {
               </div>
               <AdminBackupsTable />
             </div>
+          </TabsContent>
+
+          <TabsContent value="notifications" className="m-0">
+            <AdminNotifications />
           </TabsContent>
         </Tabs>
       </main>
