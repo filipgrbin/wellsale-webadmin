@@ -78,13 +78,41 @@ export function pragueDate(d: Date): string {
   }).format(d);
 }
 
+/** Normalize to YYYY-MM-DD (Prague local date for ISO timestamps). */
+export function normalizeCloseDate(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return pragueDate(d);
+  return null;
+}
+
+/** Extract business close date from uzaverka backup metadata / filename / upload time. */
+export function extractCloseDate(backup: Backup): string | null {
+  const meta = backup.metadata_json as UzaverkaMeta & { date?: string; datum?: string } | null;
+  const fromMeta =
+    normalizeCloseDate(meta?.close_date) ??
+    normalizeCloseDate(meta?.date) ??
+    normalizeCloseDate(meta?.datum);
+  if (fromMeta) return fromMeta;
+
+  const fromName = backup.file_name.match(/(\d{4}-\d{2}-\d{2})/);
+  if (fromName) return fromName[1];
+
+  if (backup.uploaded_at) return pragueDate(new Date(backup.uploaded_at));
+  return null;
+}
+
 export function pragueHourFromIso(iso: string): number {
   const h = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Prague",
     hour: "numeric",
     hour12: false,
   }).format(new Date(iso));
-  return Number(h);
+  const n = Number(h);
+  return n === 24 ? 0 : n;
 }
 
 export function lastNDays(n: number): string[] {
@@ -193,9 +221,10 @@ export function parseClosureRecords(
     if (branchFilter && !branchFilter.has(b.branch_id)) continue;
 
     const meta = b.metadata_json as UzaverkaMeta | null;
-    if (!meta?.close_date) continue;
+    const closeDate = extractCloseDate(b);
+    if (!closeDate) continue;
 
-    const key = `${b.branch_id}|${meta.close_date}`;
+    const key = `${b.branch_id}|${closeDate}`;
     const ex = latest.get(key);
     if (!ex || new Date(b.uploaded_at).getTime() > new Date(ex.uploaded_at).getTime()) {
       latest.set(key, b);
@@ -204,16 +233,17 @@ export function parseClosureRecords(
 
   return [...latest.values()].map((b) => {
     const meta = b.metadata_json as UzaverkaMeta;
-    const rz = meta.real_zisk == null ? null : Number(meta.real_zisk);
+    const closeDate = extractCloseDate(b)!;
+    const rz = meta?.real_zisk == null ? null : Number(meta.real_zisk);
     return {
       branchId: b.branch_id,
       branchCode: b.branch_code || `#${b.branch_id}`,
       branchName: b.branch_name || `Pobočka ${b.branch_id}`,
-      closeDate: meta.close_date as string,
+      closeDate,
       uploadedAt: b.uploaded_at,
-      revenue: Number(meta.total_revenue) || 0,
+      revenue: Number(meta?.total_revenue) || 0,
       profit: Number.isFinite(rz) ? rz : null,
-      txCount: Number(meta.tx_count) || 0,
+      txCount: Number(meta?.tx_count) || 0,
     };
   });
 }
@@ -269,9 +299,11 @@ export function buildChartBuckets(
         total: 0,
       });
     }
+    // Intraday: only closures whose business date falls in the selected range
     for (const r of filtered) {
       const h = pragueHourFromIso(r.uploadedAt);
-      const bucket = buckets.get(h)!;
+      const bucket = buckets.get(h);
+      if (!bucket) continue;
       bucket.byBranch.set(r.branchId, (bucket.byBranch.get(r.branchId) ?? 0) + r.revenue);
       bucket.total += r.revenue;
     }

@@ -135,13 +135,11 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
   }, [rangePreset, canUseHourly]);
 
   const { data: backupsData, isLoading } = useSWR(
-    ["turnover-charts", effectiveLicense ?? "all", from, to],
+    ["turnover-charts", effectiveLicense ?? "all"],
     () =>
       getBackups({
         kind: "uzaverka",
         limit: 500,
-        from,
-        to,
         ...(effectiveLicense ? { licenseKey: effectiveLicense } : {}),
       })
   );
@@ -442,7 +440,9 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
                   <p className="text-sm text-muted-foreground py-12 text-center">
                     Vyberte alespoň jednu prodejnu v seznamu výše
                   </p>
-                ) : chartOutput.rows.every((r) => Number(r.total) === 0) ? (
+                ) : chartOutput.rows.every(
+                    (r) => Number(r.total) === 0 && Number(r.revenue ?? 0) === 0
+                  ) ? (
                   <p className="text-sm text-muted-foreground py-12 text-center">
                     V tomto období nejsou žádné uzávěrky
                   </p>

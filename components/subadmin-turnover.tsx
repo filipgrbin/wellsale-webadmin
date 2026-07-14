@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { getBackups, getBranches, type Backup } from "@/lib/api";
+import { extractCloseDate, pragueDate, lastNDays, dayLabel } from "@/lib/turnover-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Receipt, Store, CalendarDays, CalendarRange } from "lucide-react";
@@ -38,32 +39,6 @@ function transakceLabel(n: number): string {
   return n >= 1 && n <= 4 ? "transakce" : "transakcí";
 }
 
-// YYYY-MM-DD for a date in the shops' timezone (closure dates are local Czech dates).
-function pragueDate(d: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Prague",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-}
-
-// Last N day-strings, today first, in Europe/Prague.
-function lastNDays(n: number): string[] {
-  const out: string[] = [];
-  const now = Date.now();
-  for (let i = 0; i < n; i++) out.push(pragueDate(new Date(now - i * 86_400_000)));
-  return out;
-}
-
-function dayLabel(dateStr: string): { dow: string; dm: string } {
-  const d = new Date(dateStr + "T12:00:00");
-  return {
-    dow: new Intl.DateTimeFormat("cs-CZ", { weekday: "short" }).format(d),
-    dm: new Intl.DateTimeFormat("cs-CZ", { day: "numeric", month: "numeric" }).format(d),
-  };
-}
-
 export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
   // Only `uzaverka` (daily closure) backups count — `manual` backups are skipped.
   const { data } = useSWR(
@@ -86,10 +61,10 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
     const backups = data?.backups ?? [];
     const latest = new Map<string, Backup>();
     for (const b of backups) {
-      if (b.kind !== "uzaverka") continue;
-      const meta = b.metadata_json as UzaverkaMeta | null;
-      if (!meta?.close_date) continue;
-      const key = `${b.branch_id}|${meta.close_date}`;
+      if (b.kind !== "uzaverka" && b.kind !== "close") continue;
+      const closeDate = extractCloseDate(b);
+      if (!closeDate) continue;
+      const key = `${b.branch_id}|${closeDate}`;
       const ex = latest.get(key);
       if (!ex || new Date(b.uploaded_at).getTime() > new Date(ex.uploaded_at).getTime()) {
         latest.set(key, b);
@@ -101,7 +76,7 @@ export function SubadminTurnover({ licenseKey }: SubadminTurnoverProps) {
     >();
     for (const b of latest.values()) {
       const meta = b.metadata_json as UzaverkaMeta;
-      const d = meta.close_date as string;
+      const d = extractCloseDate(b)!;
       const cur =
         byDate.get(d) ??
         { revenue: 0, profit: 0, profitBranches: new Set<number>(), tx: 0, branches: new Set<number>() };
