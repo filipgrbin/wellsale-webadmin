@@ -495,6 +495,7 @@ export interface Notification {
   admin_only: boolean;
   license_key?: string | null;
   branch_id?: number | null;
+  branch_code?: string | null;
   branch_name?: string | null;
   created_at: string;
   expires_at: string | null;

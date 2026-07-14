@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -47,7 +48,7 @@ import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
 import { toast } from "sonner";
 
-type TargetType = "all" | "license" | "branch" | "admin";
+type TargetType = "all" | "license" | "branch";
 
 const priorityLabels: Record<NotificationPriority, string> = {
   low: "Nízká",
@@ -64,10 +65,15 @@ const priorityVariants: Record<NotificationPriority, "secondary" | "default" | "
 };
 
 function targetLabel(n: Notification): string {
-  if (n.admin_only) return "Pouze admin panel";
-  if (n.branch_id) return `Pobočka #${n.branch_id}${n.branch_name ? ` (${n.branch_name})` : ""}`;
-  if (n.license_key) return `Licence ${n.license_key.slice(0, 12)}…`;
-  return "Všechny pokladny";
+  let scope: string;
+  if (n.branch_id) {
+    scope = `Pobočka ${n.branch_name || n.branch_code || `#${n.branch_id}`}`;
+  } else if (n.license_key) {
+    scope = `Licence ${n.license_key.slice(0, 12)}…`;
+  } else {
+    scope = "Všechny pokladny";
+  }
+  return n.admin_only ? `Admin · ${scope}` : scope;
 }
 
 export function AdminNotifications() {
@@ -75,9 +81,10 @@ export function AdminNotifications() {
   const { data: licensesData } = useSWR("licenses", getLicenses);
   const { data: branchesData } = useSWR("all-branches", () => getBranches());
 
+  const [adminOnly, setAdminOnly] = useState(false);
   const [targetType, setTargetType] = useState<TargetType>("all");
   const [licenseKey, setLicenseKey] = useState("");
-  const [branchId, setBranchId] = useState("");
+  const [selectedBranchIds, setSelectedBranchIds] = useState<Set<number>>(new Set());
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [priority, setPriority] = useState<NotificationPriority>("medium");
@@ -86,41 +93,88 @@ export function AdminNotifications() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const branches = branchesData?.branches ?? [];
-  const filteredBranches =
-    targetType === "branch" && licenseKey
-      ? branches.filter((b) => b.license_key === licenseKey)
-      : branches;
+  const branchesForLicense = licenseKey
+    ? branches.filter((b) => b.license_key === licenseKey && !b.archived_at)
+    : branches.filter((b) => !b.archived_at);
+
+  const handleAdminOnlyChange = (checked: boolean) => {
+    setAdminOnly(checked);
+    if (checked && targetType === "all") {
+      setTargetType("license");
+    }
+  };
+
+  const handleTargetChange = (v: TargetType) => {
+    setTargetType(v);
+    setLicenseKey("");
+    setSelectedBranchIds(new Set());
+  };
+
+  const toggleBranch = (id: number) => {
+    setSelectedBranchIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleSend = async () => {
     if (!title.trim() || !message.trim()) {
       toast.error("Vyplňte název a zprávu");
       return;
     }
+
+    if (adminOnly && targetType === "all") {
+      toast.error("Admin oznámení musí mít cíl — vyberte licenci nebo pobočky");
+      return;
+    }
     if (targetType === "license" && !licenseKey) {
       toast.error("Vyberte licenci");
       return;
     }
-    if (targetType === "branch" && !branchId) {
-      toast.error("Vyberte pobočku");
-      return;
+    if (targetType === "branch") {
+      if (!licenseKey) {
+        toast.error("Vyberte licenci");
+        return;
+      }
+      if (selectedBranchIds.size === 0) {
+        toast.error("Vyberte alespoň jednu pobočku");
+        return;
+      }
     }
+
+    const payload = {
+      title: title.trim(),
+      message: message.trim(),
+      priority,
+      expires_at: expiresAt || null,
+      admin_only: adminOnly,
+    };
 
     setSending(true);
     try {
-      const isAdminOnly = targetType === "admin";
-      await makeNotification({
-        title: title.trim(),
-        message: message.trim(),
-        priority,
-        expires_at: expiresAt || null,
-        admin_only: isAdminOnly,
-        ...(targetType === "license" && !isAdminOnly ? { license_key: licenseKey } : {}),
-        ...(targetType === "branch" && !isAdminOnly ? { branch_id: Number(branchId) } : {}),
-      });
-      toast.success("Oznámení odesláno");
+      if (targetType === "branch") {
+        for (const branchId of selectedBranchIds) {
+          await makeNotification({ ...payload, license_key: licenseKey, branch_id: branchId });
+        }
+        toast.success(
+          selectedBranchIds.size > 1
+            ? `Odesláno ${selectedBranchIds.size} oznámení (po pobočkách)`
+            : "Oznámení odesláno"
+        );
+      } else if (targetType === "license") {
+        await makeNotification({ ...payload, license_key: licenseKey });
+        toast.success("Oznámení odesláno");
+      } else {
+        await makeNotification({ ...payload, admin_only: false });
+        toast.success("Oznámení odesláno");
+      }
+
       setTitle("");
       setMessage("");
       setExpiresAt("");
+      setSelectedBranchIds(new Set());
       await mutate();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Odeslání selhalo");
@@ -148,10 +202,10 @@ export function AdminNotifications() {
       <div>
         <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
           <Bell className="h-6 w-6" />
-          Oznámení na pokladny
+          Oznámení
         </h2>
         <p className="text-muted-foreground">
-          Oznámení na pokladny, vybranou licenci, pobočku nebo pouze do admin panelu
+          Na pokladny nebo jen do admin panelu — vždy s konkrétním cílem (licence / pobočky)
         </p>
       </div>
 
@@ -159,31 +213,40 @@ export function AdminNotifications() {
         <CardHeader>
           <CardTitle className="text-base">Nové oznámení</CardTitle>
           <CardDescription>
-            {targetType === "admin"
-              ? "Zpráva se uloží s admin_only=true — zobrazí se jen v admin panelu, ne na pokladnách"
-              : "Zpráva se zobrazí na pokladnách při příštím načtení"}
+            {adminOnly
+              ? "admin_only=true — uvidí jen admini v rozsahu vybrané licence nebo poboček, pokladny ne"
+              : "Zobrazí se na pokladnách v rozsahu cíle při příštím načtení"}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex items-start gap-3 rounded-lg border border-border p-3">
+            <Checkbox
+              id="admin-only"
+              checked={adminOnly}
+              onCheckedChange={(c) => handleAdminOnlyChange(c === true)}
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="admin-only" className="cursor-pointer font-medium">
+                Pouze pro adminy (webadmin)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Uloží se s admin_only=true. Musíte vybrat licenci nebo konkrétní pobočky — nejde poslat
+                „všem licencím“.
+              </p>
+            </div>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Cíl</Label>
-              <Select
-                value={targetType}
-                onValueChange={(v) => {
-                  setTargetType(v as TargetType);
-                  setLicenseKey("");
-                  setBranchId("");
-                }}
-              >
+              <Select value={targetType} onValueChange={(v) => handleTargetChange(v as TargetType)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Všechny pokladny</SelectItem>
-                  <SelectItem value="license">Vybraná licence (všechny prodejny)</SelectItem>
-                  <SelectItem value="branch">Vybraná pobočka</SelectItem>
-                  <SelectItem value="admin">Pouze pro adminy (webadmin)</SelectItem>
+                  {!adminOnly && <SelectItem value="all">Všechny pokladny</SelectItem>}
+                  <SelectItem value="license">Celá licence (všechny prodejny)</SelectItem>
+                  <SelectItem value="branch">Vybrané pobočky z licence</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -204,10 +267,16 @@ export function AdminNotifications() {
             </div>
           </div>
 
-          {targetType === "license" && (
+          {(targetType === "license" || targetType === "branch") && (
             <div className="space-y-2">
               <Label>Licence</Label>
-              <Select value={licenseKey} onValueChange={setLicenseKey}>
+              <Select
+                value={licenseKey}
+                onValueChange={(v) => {
+                  setLicenseKey(v);
+                  setSelectedBranchIds(new Set());
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Vyberte licenci" />
                 </SelectTrigger>
@@ -222,47 +291,28 @@ export function AdminNotifications() {
             </div>
           )}
 
-          {targetType === "branch" && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Licence (volitelný filtr)</Label>
-                <Select
-                  value={licenseKey || "all"}
-                  onValueChange={(v) => {
-                    setLicenseKey(v === "all" ? "" : v);
-                    setBranchId("");
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Všechny" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Všechny licence</SelectItem>
-                    {(licensesData?.licenses ?? []).map((l) => (
-                      <SelectItem key={l.license_key} value={l.license_key}>
-                        {l.owner_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Pobočka</Label>
-                <Select value={branchId} onValueChange={setBranchId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Vyberte pobočku" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredBranches
-                      .filter((b) => !b.archived_at)
-                      .map((b) => (
-                        <SelectItem key={b.id} value={String(b.id)}>
-                          {b.name} ({b.code})
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          {targetType === "branch" && licenseKey && (
+            <div className="space-y-2">
+              <Label>Pobočky</Label>
+              {branchesForLicense.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Tato licence nemá aktivní pobočky</p>
+              ) : (
+                <div className="rounded-lg border border-border p-3 space-y-2 max-h-48 overflow-y-auto">
+                  {branchesForLicense.map((b) => (
+                    <div key={b.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`notif-branch-${b.id}`}
+                        checked={selectedBranchIds.has(b.id)}
+                        onCheckedChange={() => toggleBranch(b.id)}
+                      />
+                      <Label htmlFor={`notif-branch-${b.id}`} className="cursor-pointer text-sm">
+                        <span className="font-medium">{b.code}</span>
+                        <span className="text-muted-foreground"> — {b.name}</span>
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -283,7 +333,7 @@ export function AdminNotifications() {
               id="notif-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Text oznámení pro pokladnu…"
+              placeholder={adminOnly ? "Text pro admin panel…" : "Text oznámení pro pokladnu…"}
               rows={4}
             />
           </div>
