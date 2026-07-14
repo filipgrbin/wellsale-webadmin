@@ -45,7 +45,7 @@ export default function AdminDashboard() {
                 <Key className="h-4 w-4 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold">Admin Panel WellSale</h1>
+                <h1 className="text-lg font-semibold">WellSale Admin Panel</h1>
                 <p className="text-xs text-muted-foreground">License Management</p>
               </div>
             </div>
@@ -68,7 +68,7 @@ export default function AdminDashboard() {
                 <Key className="h-4 w-4 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold">Admin Panel WellSale</h1>
+                <h1 className="text-lg font-semibold">WellSale Admin Panel</h1>
                 <p className="text-xs text-muted-foreground">License Management</p>
               </div>
             </div>
@@ -77,7 +77,7 @@ export default function AdminDashboard() {
                 href="/"
                 className="text-xs text-muted-foreground hover:text-primary transition-colors"
               >
-                Subadmin Panel
+                WellSale Webadministrace
               </a>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Admin Dashboard</span>

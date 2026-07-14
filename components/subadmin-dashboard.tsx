@@ -64,8 +64,8 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
                 <Building2 className="h-4 w-4 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold">TAFDY Panel</h1>
-                <p className="text-xs text-muted-foreground">Sprava pobocek</p>
+                <h1 className="text-lg font-semibold">WellSale Webadministrace</h1>
+                <p className="text-xs text-muted-foreground">Správa poboček</p>
               </div>
             </div>
             

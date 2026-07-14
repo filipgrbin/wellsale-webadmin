@@ -8,8 +8,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Admin Panel WellSale',
-  description: 'License Management System',
+  title: 'WellSale Webadministrace',
+  description: 'WellSale — admin panel a správa licencí',
   generator: 'v0.app',
   icons: {
     icon: [

@@ -52,9 +52,9 @@ export default function LoginPage() {
             <Shield className="h-8 w-8 text-primary" />
           </div>
           <div>
-            <CardTitle className="text-2xl">Přihlášení</CardTitle>
+            <CardTitle className="text-2xl">WellSale Admin Panel</CardTitle>
             <CardDescription className="mt-2">
-              Zadejte heslo pro přístup do systému
+              Zadejte heslo pro přístup do webadministrace
             </CardDescription>
           </div>
         </CardHeader>

@@ -130,9 +130,9 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
             <Shield className="h-8 w-8 text-primary" />
           </div>
           <div>
-            <CardTitle className="text-2xl">Prihlaseni majitele</CardTitle>
+            <CardTitle className="text-2xl">WellSale Webadministrace</CardTitle>
             <CardDescription className="mt-2">
-              Zadejte svuj licencni klic a prihlasovaci kod pro pristup ke sprave vasich pobocek a zaloh
+              Přihlášení majitele licence — správa poboček a záloh
             </CardDescription>
           </div>
         </CardHeader>
@@ -193,7 +193,7 @@ export function SubadminLogin({ onLogin }: SubadminLoginProps) {
 
             <div className="text-center">
               <a href="/login" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-                Zpet na admin prihlaseni
+                Zpět na WellSale Admin Panel
               </a>
             </div>
           </form>
