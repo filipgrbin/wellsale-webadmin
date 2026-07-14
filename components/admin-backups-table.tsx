@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import {
   getBackups,
@@ -23,6 +23,8 @@ import {
   getTableDisplayName,
   getUserCardFields,
 } from "@/lib/backup-preview-utils";
+import { BranchAppVersion } from "@/components/branch-app-version";
+import { buildBranchVersionMap, resolveBackupAppVersion } from "@/lib/branch-app-version";
 import {
   Table,
   TableBody,
@@ -181,6 +183,7 @@ export function AdminBackupsTable() {
   const totalPages = Math.ceil(total / limit);
   const licenses = licensesData?.licenses || [];
   const branches = branchesData?.branches || [];
+  const branchVersionMap = useMemo(() => buildBranchVersionMap(branches), [branches]);
 
   const filtered = backups.filter(
     (b) =>
@@ -398,6 +401,7 @@ export function AdminBackupsTable() {
                       <TableHead>Licence</TableHead>
                       <TableHead>Pobocka</TableHead>
                       <TableHead>Typ</TableHead>
+                      <TableHead>Verze app</TableHead>
                       <TableHead>Zisk</TableHead>
                       <TableHead>Velikost</TableHead>
                       <TableHead>Nahrano</TableHead>
@@ -405,7 +409,9 @@ export function AdminBackupsTable() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((backup) => (
+                    {filtered.map((backup) => {
+                      const ver = resolveBackupAppVersion(backup, branchVersionMap);
+                      return (
                       <TableRow key={backup.id} className="border-border">
                         <TableCell>
                           <Checkbox
@@ -438,6 +444,9 @@ export function AdminBackupsTable() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">{backup.kind}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <BranchAppVersion version={ver.app_version} seenAt={ver.app_version_seen_at} />
                         </TableCell>
                         <TableCell className="text-emerald-500">
                           {(() => {
@@ -485,7 +494,8 @@ export function AdminBackupsTable() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

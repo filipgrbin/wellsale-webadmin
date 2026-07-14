@@ -58,9 +58,11 @@ import {
   AlertTriangle,
   Fingerprint,
   Eraser,
+  Smartphone,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
+import { BranchAppVersion } from "@/components/branch-app-version";
 
 function formatDate(date: string | null) {
   if (!date) return "—";
@@ -310,6 +312,12 @@ export function BranchesTable({ licenseKey, showLicenseColumn = true, onSelectBr
               <TableHead className="text-center">
                 <HardDrive className="h-4 w-4 mx-auto" />
               </TableHead>
+              <TableHead>
+                <span className="flex items-center gap-1.5">
+                  <Smartphone className="h-4 w-4" />
+                  Verze app
+                </span>
+              </TableHead>
               <TableHead>Vytvořeno</TableHead>
               <TableHead className="w-[100px]"></TableHead>
             </TableRow>
@@ -317,14 +325,14 @@ export function BranchesTable({ licenseKey, showLicenseColumn = true, onSelectBr
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={showLicenseColumn ? 10 : 9} className="text-center py-8">
+                <TableCell colSpan={showLicenseColumn ? 11 : 10} className="text-center py-8">
                   <RefreshCw className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
                 </TableCell>
               </TableRow>
             ) : filteredBranches.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={showLicenseColumn ? 10 : 9}
+                  colSpan={showLicenseColumn ? 11 : 10}
                   className="text-center py-8 text-muted-foreground"
                 >
                   Žádné pobočky nenalezeny
@@ -416,6 +424,12 @@ export function BranchesTable({ licenseKey, showLicenseColumn = true, onSelectBr
                   </TableCell>
                   <TableCell className="text-center text-muted-foreground">
                     {branch.backups_count ?? 0}
+                  </TableCell>
+                  <TableCell>
+                    <BranchAppVersion
+                      version={branch.app_version}
+                      seenAt={branch.app_version_seen_at}
+                    />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDate(branch.created_at)}

@@ -69,6 +69,8 @@ export interface Branch {
   // Hardware binding (admin-managed). hwid is null until a branch binds to a machine.
   hwid: string | null;
   hwid_bound_at: string | null;
+  app_version: string | null;
+  app_version_seen_at: string | null;
   backups_count?: number;
   machines_count?: number;
 }

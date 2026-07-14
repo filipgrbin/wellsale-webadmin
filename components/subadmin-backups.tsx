@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import {
   getBackups,
@@ -23,6 +23,8 @@ import {
   getUserCardFields,
   isTransactionEventsTable,
 } from "@/lib/backup-preview-utils";
+import { BranchAppVersion } from "@/components/branch-app-version";
+import { buildBranchVersionMap, resolveBackupAppVersion } from "@/lib/branch-app-version";
 import {
   Table,
   TableBody,
@@ -183,6 +185,8 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
   const backups = data?.backups || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / limit);
+  const branches = branchesData?.branches || [];
+  const branchVersionMap = useMemo(() => buildBranchVersionMap(branches), [branches]);
 
   const filtered = backups.filter(
     (b) =>
@@ -375,6 +379,7 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                       <TableHead>Soubor</TableHead>
                       <TableHead className="hidden sm:table-cell">Pobocka</TableHead>
                       <TableHead>Typ</TableHead>
+                      <TableHead className="hidden md:table-cell">Verze app</TableHead>
                       <TableHead className="hidden md:table-cell">Zisk</TableHead>
                       <TableHead className="hidden md:table-cell">Velikost</TableHead>
                       <TableHead className="hidden lg:table-cell">Nahrano</TableHead>
@@ -382,7 +387,9 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((backup) => (
+                    {filtered.map((backup) => {
+                      const ver = resolveBackupAppVersion(backup, branchVersionMap);
+                      return (
                       <TableRow key={backup.id} className="border-border">
                         <TableCell>
                           <Checkbox
@@ -409,6 +416,9 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">{backup.kind}</Badge>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          <BranchAppVersion version={ver.app_version} seenAt={ver.app_version_seen_at} />
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-emerald-500">
                           {(() => {
@@ -456,7 +466,8 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

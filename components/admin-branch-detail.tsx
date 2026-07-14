@@ -45,11 +45,14 @@ import {
   MapPin,
   Calendar,
   AlertTriangle,
+  Smartphone,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
 import { BranchFaults } from "@/components/branch-faults";
 import { BackupDownloadDialog } from "@/components/backup-download-dialog";
+import { BranchAppVersion } from "@/components/branch-app-version";
+import { resolveBackupAppVersion } from "@/lib/branch-app-version";
 
 function formatDate(date: string | null) {
   if (!date) return "—";
@@ -199,6 +202,15 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
             </div>
           </div>
           <Info label="Vytvořeno" value={formatDate(branch.created_at)} icon={<Calendar className="h-4 w-4 text-primary" />} />
+          <div className="flex items-start gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-primary/10">
+              <Smartphone className="h-4 w-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm text-muted-foreground">Verze aplikace</p>
+              <BranchAppVersion version={branch.app_version} seenAt={branch.app_version_seen_at} />
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -246,6 +258,7 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Soubor</TableHead>
                   <TableHead>Typ</TableHead>
+                  <TableHead>Verze app</TableHead>
                   <TableHead>Tržba</TableHead>
                   <TableHead>Zisk</TableHead>
                   <TableHead>Velikost</TableHead>
@@ -256,18 +269,23 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
               <TableBody>
                 {backups.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                       Žádné zálohy
                     </TableCell>
                   </TableRow>
                 ) : (
-                  backups.map((b) => (
+                  backups.map((b) => {
+                    const ver = resolveBackupAppVersion(b, new Map([[branch.id, branch]]));
+                    return (
                     <TableRow key={b.id}>
                       <TableCell className="max-w-[240px] truncate font-mono text-xs" title={b.file_name}>
                         {b.file_name}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">{b.kind}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <BranchAppVersion version={ver.app_version} seenAt={ver.app_version_seen_at} />
                       </TableCell>
                       <TableCell className="text-green-500">
                         {Number.isFinite(metaNumber(b.metadata_json, "total_revenue"))
@@ -304,7 +322,8 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

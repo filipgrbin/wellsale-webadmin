@@ -25,6 +25,8 @@ import {
 } from "@/lib/backup-preview-utils";
 import { BranchFaults } from "@/components/branch-faults";
 import { BackupDownloadDialog } from "@/components/backup-download-dialog";
+import { BranchAppVersion } from "@/components/branch-app-version";
+import { resolveBackupAppVersion } from "@/lib/branch-app-version";
 
 interface SubadminSession {
   licenseKey: string;
@@ -81,6 +83,7 @@ import {
   Settings,
   ClipboardList,
   ArrowUpDown,
+  Smartphone,
 } from "lucide-react";
 
 // Helper to get nice table names
@@ -303,6 +306,21 @@ export default function BranchDetailPage() {
               {branch.address && (
                 <p className="text-muted-foreground">{branch.address}</p>
               )}
+              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                <Smartphone className="h-4 w-4 shrink-0" />
+                <span>Verze aplikace:</span>
+                <BranchAppVersion
+                  version={branch.app_version}
+                  seenAt={branch.app_version_seen_at}
+                  inline
+                />
+                {branch.app_version_seen_at && (
+                  <span className="text-xs">
+                    (nahlášeno{" "}
+                    {new Date(branch.app_version_seen_at).toLocaleString("cs-CZ")})
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <Badge className={branch.archived_at ? "bg-secondary" : "bg-green-500/10 text-green-500 border-green-500/20"}>
@@ -387,6 +405,7 @@ export default function BranchDetailPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Datum uzávěrky</TableHead>
+                      <TableHead>Verze app</TableHead>
                       <TableHead>Tržba</TableHead>
                       <TableHead>Zisk</TableHead>
                       <TableHead>Nahráno</TableHead>
@@ -399,6 +418,7 @@ export default function BranchDetailPage() {
                       const closeDate = extractDateFromFilename(backup.file_name);
                       const meta = (backup.metadata_json || {}) as { total_revenue?: number; real_zisk?: number };
                       const rz = Number(meta.real_zisk);
+                      const ver = resolveBackupAppVersion(backup, new Map([[branch.id, branch]]));
                       return (
                         <TableRow key={backup.id}>
                           <TableCell className="font-medium">
@@ -406,6 +426,9 @@ export default function BranchDetailPage() {
                               <Calendar className="h-4 w-4 text-muted-foreground" />
                               {closeDate ? new Date(closeDate).toLocaleDateString("cs-CZ") : backup.file_name}
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <BranchAppVersion version={ver.app_version} seenAt={ver.app_version_seen_at} />
                           </TableCell>
                           <TableCell className="font-medium text-green-500">
                             {meta.total_revenue != null ? formatCurrency(meta.total_revenue) : "—"}

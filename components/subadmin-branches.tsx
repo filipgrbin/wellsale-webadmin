@@ -29,7 +29,9 @@ import {
   Search,
   Building2,
   ChevronRight,
+  Smartphone,
 } from "lucide-react";
+import { BranchAppVersion } from "@/components/branch-app-version";
 
 interface SubadminBranchesProps {
   licenseKey: string;
@@ -182,6 +184,13 @@ export function SubadminBranches({ licenseKey }: SubadminBranchesProps) {
                         {branch.address && (
                           <p className="text-sm text-muted-foreground mt-0.5">{branch.address}</p>
                         )}
+                        <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          <Smartphone className="h-3.5 w-3.5 shrink-0" />
+                          <BranchAppVersion
+                            version={branch.app_version}
+                            seenAt={branch.app_version_seen_at}
+                          />
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
