@@ -24,7 +24,9 @@ import {
   getUserCardFields,
 } from "@/lib/backup-preview-utils";
 import { BranchAppVersion } from "@/components/branch-app-version";
+import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
 import { buildBranchVersionMap, resolveBackupAppVersion } from "@/lib/branch-app-version";
+import { resolveCashierName } from "@/lib/uzaverka-meta";
 import {
   Table,
   TableBody,
@@ -607,6 +609,13 @@ export function AdminBackupsTable() {
                   </CardContent>
                 </Card>
               </div>
+
+              <UzaverkaTillPanel
+                sources={[
+                  viewingBackup?.metadata_json,
+                  decryptedData.uzaverky[0],
+                ]}
+              />
 
               <Tabs defaultValue="prodeje" className="flex-1">
                 <TabsList>

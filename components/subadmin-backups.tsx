@@ -24,7 +24,9 @@ import {
   isTransactionEventsTable,
 } from "@/lib/backup-preview-utils";
 import { BranchAppVersion } from "@/components/branch-app-version";
+import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
 import { buildBranchVersionMap, resolveBackupAppVersion } from "@/lib/branch-app-version";
+import { resolveCashierName } from "@/lib/uzaverka-meta";
 import {
   Table,
   TableBody,
@@ -592,6 +594,13 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                   </Card>
                 </div>
 
+                <UzaverkaTillPanel
+                  sources={[
+                    viewingBackup?.metadata_json,
+                    decryptedData.uzaverky[0],
+                  ]}
+                />
+
                 <Tabs defaultValue="prodeje" className="flex-1">
                   <TabsList>
                     <TabsTrigger value="analyza" className="gap-2">
@@ -718,6 +727,18 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                                     <span className="text-muted-foreground">Datum uzávěrky:</span>
                                     <span className="font-medium">{decryptedData.uzaverky[0].close_date || decryptedData.uzaverky[0].datum}</span>
                                   </div>
+                                  {(() => {
+                                    const cashier = resolveCashierName(
+                                      viewingBackup?.metadata_json as Record<string, unknown> | null
+                                    ) ?? resolveCashierName(decryptedData.uzaverky[0] as Record<string, unknown>);
+                                    if (!cashier) return null;
+                                    return (
+                                      <div className="flex justify-between text-sm">
+                                        <span className="text-muted-foreground">Pokladní:</span>
+                                        <span className="font-medium">{cashier}</span>
+                                      </div>
+                                    );
+                                  })()}
                                   <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">Počet transakcí:</span>
                                     <span className="font-medium">{decryptedData.stats.totalSales}</span>

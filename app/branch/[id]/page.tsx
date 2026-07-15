@@ -26,7 +26,9 @@ import {
 import { BranchFaults } from "@/components/branch-faults";
 import { BackupDownloadDialog } from "@/components/backup-download-dialog";
 import { BranchAppVersion } from "@/components/branch-app-version";
+import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
+import { hasTillData, resolveCashierName } from "@/lib/uzaverka-meta";
 
 interface SubadminSession {
   licenseKey: string;
@@ -406,6 +408,7 @@ export default function BranchDetailPage() {
                     <TableRow>
                       <TableHead>Datum uzávěrky</TableHead>
                       <TableHead>Verze app</TableHead>
+                      <TableHead>Pokladní</TableHead>
                       <TableHead>Tržba</TableHead>
                       <TableHead>Zisk</TableHead>
                       <TableHead>Nahráno</TableHead>
@@ -416,8 +419,9 @@ export default function BranchDetailPage() {
                   <TableBody>
                     {uzaverkyBackups.map((backup) => {
                       const closeDate = extractDateFromFilename(backup.file_name);
-                      const meta = (backup.metadata_json || {}) as { total_revenue?: number; real_zisk?: number };
+                      const meta = (backup.metadata_json || {}) as Record<string, unknown>;
                       const rz = Number(meta.real_zisk);
+                      const cashier = resolveCashierName(meta);
                       const ver = resolveBackupAppVersion(backup, new Map([[branch.id, branch]]));
                       return (
                         <TableRow key={backup.id}>
@@ -430,8 +434,14 @@ export default function BranchDetailPage() {
                           <TableCell>
                             <BranchAppVersion version={ver.app_version} seenAt={ver.app_version_seen_at} />
                           </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {cashier ?? "—"}
+                            {hasTillData(meta) && (
+                              <span className="ml-1.5 text-xs text-emerald-600">· pokladna</span>
+                            )}
+                          </TableCell>
                           <TableCell className="font-medium text-green-500">
-                            {meta.total_revenue != null ? formatCurrency(meta.total_revenue) : "—"}
+                            {meta.total_revenue != null ? formatCurrency(Number(meta.total_revenue)) : "—"}
                           </TableCell>
                           <TableCell className="font-medium text-emerald-500">
                             {Number.isFinite(rz) ? formatCurrency(rz) : "—"}
@@ -657,6 +667,13 @@ export default function BranchDetailPage() {
                   </Card>
                 </div>
 
+                <UzaverkaTillPanel
+                  sources={[
+                    viewingBackup?.metadata_json,
+                    decryptedData.uzaverky[0],
+                  ]}
+                />
+
                 <Tabs defaultValue="analyza" className="flex-1">
                   <TabsList>
                     <TabsTrigger value="analyza" className="gap-2">
@@ -783,6 +800,17 @@ export default function BranchDetailPage() {
                                     <span className="text-muted-foreground">Datum uzávěrky:</span>
                                     <span className="font-medium">{formatBackupDateTime(decryptedData.uzaverky[0].close_date || decryptedData.uzaverky[0].datum)}</span>
                                   </div>
+                                  {(() => {
+                                    const cashier = resolveCashierName(viewingBackup?.metadata_json) ??
+                                      resolveCashierName(decryptedData.uzaverky[0]);
+                                    if (!cashier) return null;
+                                    return (
+                                      <div className="flex justify-between text-sm">
+                                        <span className="text-muted-foreground">Pokladní:</span>
+                                        <span className="font-medium">{cashier}</span>
+                                      </div>
+                                    );
+                                  })()}
                                   <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">Počet transakcí:</span>
                                     <span className="font-medium">{decryptedData.uzaverky[0].tx_count || decryptedData.uzaverky[0].payload_json?.tx_count || 0}</span>

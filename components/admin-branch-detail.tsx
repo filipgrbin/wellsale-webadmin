@@ -53,6 +53,7 @@ import { BranchFaults } from "@/components/branch-faults";
 import { BackupDownloadDialog } from "@/components/backup-download-dialog";
 import { BranchAppVersion } from "@/components/branch-app-version";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
+import { hasTillData, resolveCashierName } from "@/lib/uzaverka-meta";
 
 function formatDate(date: string | null) {
   if (!date) return "—";
@@ -259,6 +260,7 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
                   <TableHead>Soubor</TableHead>
                   <TableHead>Typ</TableHead>
                   <TableHead>Verze app</TableHead>
+                  <TableHead>Pokladní</TableHead>
                   <TableHead>Tržba</TableHead>
                   <TableHead>Zisk</TableHead>
                   <TableHead>Velikost</TableHead>
@@ -269,7 +271,7 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
               <TableBody>
                 {backups.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                       Žádné zálohy
                     </TableCell>
                   </TableRow>
@@ -286,6 +288,12 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
                       </TableCell>
                       <TableCell>
                         <BranchAppVersion version={ver.app_version} seenAt={ver.app_version_seen_at} />
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {resolveCashierName(b.metadata_json) ?? "—"}
+                        {hasTillData(b.metadata_json) && (
+                          <span className="ml-1 text-xs text-emerald-600">· pokladna</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-green-500">
                         {Number.isFinite(metaNumber(b.metadata_json, "total_revenue"))
