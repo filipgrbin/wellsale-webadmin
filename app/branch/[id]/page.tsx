@@ -926,8 +926,8 @@ export default function BranchDetailPage() {
                   </TabsContent>
                   
                   <TabsContent value="prodeje" className="mt-4">
-                    <div className="grid grid-cols-5 gap-4 h-[500px]">
-                      <ScrollArea className="col-span-2 border rounded-lg">
+                    <div className="grid grid-cols-5 gap-4 h-[min(520px,calc(95vh-16rem))] min-h-0">
+                      <ScrollArea className="col-span-2 h-full min-h-0 border rounded-lg">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -958,10 +958,10 @@ export default function BranchDetailPage() {
                         </Table>
                       </ScrollArea>
                       
-                      <div className="col-span-3 border rounded-lg p-6">
+                      <div className="col-span-3 border rounded-lg p-6 min-h-0 overflow-hidden flex flex-col">
                         {selectedProdej ? (
-                          <div className="space-y-4 h-full flex flex-col">
-                            <div className="flex items-center justify-between">
+                          <div className="space-y-4 flex-1 min-h-0 flex flex-col">
+                            <div className="flex items-center justify-between shrink-0">
                               <h4 className="font-semibold text-lg flex items-center gap-2">
                                 <Package className="h-5 w-5" />
                                 Položky dokladu #{selectedProdej.cislo_dokladu}
@@ -971,7 +971,7 @@ export default function BranchDetailPage() {
                                 <p className="text-2xl font-bold text-green-500 mt-1">{formatCurrency(selectedProdej.celkem)}</p>
                               </div>
                             </div>
-                            <ScrollArea className="flex-1">
+                            <ScrollArea className="flex-1 min-h-0">
                               {selectedProdejItems.length > 0 ? (
                                 <div className="space-y-3">
                                   {selectedProdejItems.map((item) => (
