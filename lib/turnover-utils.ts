@@ -1,4 +1,7 @@
-import { posWallClockHour } from "@/lib/transaction-timestamp";
+import {
+  posStampInDayRange,
+  pragueHourFromTimestamp,
+} from "@/lib/transaction-timestamp";
 
 export interface UzaverkaMeta {
   close_id?: number;
@@ -78,11 +81,13 @@ export function pragueDate(d: Date): string {
   }).format(d);
 }
 
-/** Normalize to YYYY-MM-DD (Prague local date for ISO timestamps). */
+/** Normalize to YYYY-MM-DD. Prefers canonical POS stamp date part. */
 export function normalizeCloseDate(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const s = String(raw).trim();
   if (!s) return null;
+  const fromPos = posStampDate(s);
+  if (fromPos) return fromPos;
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const d = new Date(s);
   if (!Number.isNaN(d.getTime())) return pragueDate(d);
@@ -115,24 +120,8 @@ export function pragueHourFromIso(iso: string): number {
   return n === 24 ? 0 : n;
 }
 
-/** Hour (0–23) in Europe/Prague from POS / SQLite timestamps. */
-export function pragueHourFromTimestamp(ts: string): number {
-  const s = String(ts).trim();
-  if (!s) return 0;
-
-  // Unix epoch — true UTC instant
-  if (/^\d+$/.test(s)) {
-    const n = Number(s);
-    const ms = n > 1e12 ? n : n * 1000;
-    return pragueHourFromIso(new Date(ms).toISOString());
-  }
-
-  // POS datetime strings: literal HH is Prague local (even if suffixed with Z)
-  const wallHour = posWallClockHour(s);
-  if (wallHour != null) return wallHour;
-
-  return pragueHourFromIso(s);
-}
+/** @see pragueHourFromTimestamp in transaction-timestamp.ts */
+export { pragueHourFromTimestamp } from "@/lib/transaction-timestamp";
 
 export function lastNDays(n: number): string[] {
   const out: string[] = [];
@@ -235,6 +224,7 @@ export function saleMatchesDateRange(
   to: string,
   fallbackDate?: string
 ): boolean {
+  if (posStampInDayRange(timestamp, from, to)) return true;
   const d = normalizeCloseDate(timestamp);
   if (d) return d >= from && d <= to;
   if (fallbackDate) return fallbackDate >= from && fallbackDate <= to;

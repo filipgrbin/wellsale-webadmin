@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAndDecryptBackupById } from "@/lib/backup-wsbak-server";
+import { posStampOnDay } from "@/lib/transaction-timestamp";
 import { normalizeCloseDate } from "@/lib/turnover-utils";
 
 const API_BASE =
@@ -44,9 +45,10 @@ export async function POST(request: NextRequest) {
       try {
         const { backup, data } = await fetchAndDecryptBackupById(id, adminKey, API_BASE);
         for (const prodej of data.prodeje) {
-          const txDay = normalizeCloseDate(prodej.datum);
-          if (txDay && txDay !== day) continue;
           if (!prodej.datum?.trim()) continue;
+          if (!posStampOnDay(prodej.datum, day) && normalizeCloseDate(prodej.datum) !== day) {
+            continue;
+          }
           sales.push({
             branchId: backup.branch_id,
             timestamp: prodej.datum,

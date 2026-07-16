@@ -1,9 +1,9 @@
-import { formatPosWallClock } from "@/lib/transaction-timestamp";
+import { formatPosStamp } from "@/lib/transaction-timestamp";
 
 export function formatBackupDateTime(date?: string | null): string {
   if (!date) return "-";
-  const wall = formatPosWallClock(String(date));
-  if (wall) return wall;
+  const formatted = formatPosStamp(String(date));
+  if (formatted) return formatted;
 
   const parsed = new Date(String(date));
   if (!isNaN(parsed.getTime())) {
