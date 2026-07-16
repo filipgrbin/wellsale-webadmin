@@ -25,6 +25,7 @@ import {
 } from "@/lib/backup-preview-utils";
 import { BranchAppVersion } from "@/components/branch-app-version";
 import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
+import { TransactionStockMovementPanel } from "@/components/transaction-stock-movement-panel";
 import { buildBranchVersionMap, resolveBackupAppVersion } from "@/lib/branch-app-version";
 import { resolveCashierName } from "@/lib/uzaverka-meta";
 import {
@@ -899,6 +900,10 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                                 <p className="text-2xl font-bold text-green-500 mt-1">{formatCurrency(selectedProdej.celkem)}</p>
                               </div>
                             </div>
+                            <TransactionStockMovementPanel
+                              transaction={selectedProdej}
+                              stockMovements={decryptedData.stockMovements}
+                            />
                             <ScrollArea className="flex-1 min-h-0">
                               {selectedProdejItems.length > 0 ? (
                                 <div className="space-y-3">

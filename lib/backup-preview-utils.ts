@@ -1,5 +1,10 @@
+import { formatPosWallClock } from "@/lib/transaction-timestamp";
+
 export function formatBackupDateTime(date?: string | null): string {
   if (!date) return "-";
+  const wall = formatPosWallClock(String(date));
+  if (wall) return wall;
+
   const parsed = new Date(String(date));
   if (!isNaN(parsed.getTime())) {
     return parsed.toLocaleString("cs-CZ", {

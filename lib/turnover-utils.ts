@@ -1,4 +1,4 @@
-import type { Backup } from "@/lib/api";
+import { posWallClockHour } from "@/lib/transaction-timestamp";
 
 export interface UzaverkaMeta {
   close_id?: number;
@@ -120,16 +120,16 @@ export function pragueHourFromTimestamp(ts: string): number {
   const s = String(ts).trim();
   if (!s) return 0;
 
+  // Unix epoch — true UTC instant
   if (/^\d+$/.test(s)) {
     const n = Number(s);
     const ms = n > 1e12 ? n : n * 1000;
     return pragueHourFromIso(new Date(ms).toISOString());
   }
 
-  const local = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-  if (local && !s.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(s)) {
-    return Number(local[4]);
-  }
+  // POS datetime strings: literal HH is Prague local (even if suffixed with Z)
+  const wallHour = posWallClockHour(s);
+  if (wallHour != null) return wallHour;
 
   return pragueHourFromIso(s);
 }

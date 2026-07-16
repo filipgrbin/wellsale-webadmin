@@ -399,6 +399,11 @@ export interface ParsedBackupData {
     datum: string;
     celkem: number;
     platba_typ: string;
+    signed?: boolean;
+    signerName?: string | null;
+    signatureFingerprint?: string | null;
+    movementNumber?: string | null;
+    stockMovementId?: number | null;
   }>;
   polozky: Array<{
     id: number;
@@ -407,6 +412,19 @@ export interface ParsedBackupData {
     mnozstvi: number;
     cena_jednotka: number;
     cena_celkem: number;
+  }>;
+  stockMovements?: Array<{
+    id: number;
+    transactionId: number | null;
+    receiptNumber: string | null;
+    movementNumber: string | null;
+    signed: boolean;
+    signerName: string | null;
+    signatureFingerprint: string | null;
+    productName: string | null;
+    qty: number;
+    reason: string | null;
+    createdAt: string | null;
   }>;
   tables: string[];
   // Raw table data for non-uzaverka backups

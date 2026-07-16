@@ -25,6 +25,7 @@ import {
 } from "@/lib/backup-preview-utils";
 import { BranchAppVersion } from "@/components/branch-app-version";
 import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
+import { TransactionStockMovementPanel } from "@/components/transaction-stock-movement-panel";
 import { buildBranchVersionMap, resolveBackupAppVersion } from "@/lib/branch-app-version";
 import { resolveCashierName } from "@/lib/uzaverka-meta";
 import {
@@ -688,7 +689,7 @@ export function AdminBackupsTable() {
                               onClick={() => setSelectedProdej(prodej)}
                             >
                               <TableCell className="font-medium">{prodej.cislo_dokladu}</TableCell>
-                              <TableCell className="text-sm text-muted-foreground">{prodej.datum}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{formatBackupDateTime(prodej.datum)}</TableCell>
                               <TableCell className="font-semibold text-green-500">{formatCurrency(prodej.celkem)}</TableCell>
                               <TableCell>
                                 <Badge variant="outline" className="text-xs">
@@ -715,6 +716,10 @@ export function AdminBackupsTable() {
                               <p className="text-2xl font-bold text-green-500 mt-1">{formatCurrency(selectedProdej.celkem)}</p>
                             </div>
                           </div>
+                          <TransactionStockMovementPanel
+                            transaction={selectedProdej}
+                            stockMovements={decryptedData.stockMovements}
+                          />
                             <ScrollArea className="flex-1 min-h-0">
                             {selectedProdejItems.length > 0 ? (
                               <div className="space-y-3">

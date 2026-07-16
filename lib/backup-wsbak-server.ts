@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { extractTransactionTimestamp } from "@/lib/transaction-timestamp";
+import { parseStockMovementRow, parseTransactionStockMeta, type StockMovementRecord } from "@/lib/stock-movement-utils";
 
 const MAGIC = Buffer.from("WSBAK\x01\x00\x00", "binary");
 
@@ -34,6 +35,11 @@ export interface ParsedBackupData {
     datum: string;
     celkem: number;
     platba_typ: string;
+    signed?: boolean;
+    signerName?: string | null;
+    signatureFingerprint?: string | null;
+    movementNumber?: string | null;
+    stockMovementId?: number | null;
   }>;
   polozky: Array<{
     id: number;
@@ -43,6 +49,7 @@ export interface ParsedBackupData {
     cena_jednotka: number;
     cena_celkem: number;
   }>;
+  stockMovements: StockMovementRecord[];
   tables: string[];
   rawTables?: Record<
     string,
@@ -102,6 +109,7 @@ export async function parseSqliteBackupBuffer(sqliteBuffer: Buffer): Promise<Par
     uzaverky: [],
     prodeje: [],
     polozky: [],
+    stockMovements: [],
     tables: [],
     rawTables: {},
   };
@@ -153,13 +161,17 @@ export async function parseSqliteBackupBuffer(sqliteBuffer: Buffer): Promise<Par
         const txRows = db
           .prepare(`SELECT * FROM transactions ORDER BY ${orderBy} LIMIT 5000`)
           .all() as Record<string, unknown>[];
-        result.prodeje = txRows.map((obj, index) => ({
-          id: Number(obj.id || index + 1),
-          cislo_dokladu: String(obj.receipt_number || obj.id || index + 1),
-          datum: extractTransactionTimestamp(obj),
-          celkem: Number(obj.total || obj.amount || 0),
-          platba_typ: String(obj.payment_method || obj.payment_type || "unknown"),
-        }));
+        result.prodeje = txRows.map((obj, index) => {
+          const stockMeta = parseTransactionStockMeta(obj);
+          return {
+            id: Number(obj.id || index + 1),
+            cislo_dokladu: String(obj.receipt_number || obj.id || index + 1),
+            datum: extractTransactionTimestamp(obj),
+            celkem: Number(obj.total || obj.amount || 0),
+            platba_typ: String(obj.payment_method || obj.payment_type || "unknown"),
+            ...stockMeta,
+          };
+        });
       } catch (e) {
         console.error("Failed to parse transactions:", e);
       }
@@ -185,6 +197,19 @@ export async function parseSqliteBackupBuffer(sqliteBuffer: Buffer): Promise<Par
         });
       } catch (e) {
         console.error("Failed to parse transaction_items:", e);
+      }
+    }
+
+    if (result.tables.some((t) => t.toLowerCase() === "stock_movements")) {
+      try {
+        const movementRows = db
+          .prepare("SELECT * FROM stock_movements ORDER BY rowid ASC LIMIT 5000")
+          .all() as Record<string, unknown>[];
+        result.stockMovements = movementRows.map((row, index) =>
+          parseStockMovementRow(row, index)
+        );
+      } catch (e) {
+        console.error("Failed to parse stock_movements:", e);
       }
     }
 
