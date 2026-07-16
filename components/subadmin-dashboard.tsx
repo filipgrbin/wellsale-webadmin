@@ -8,6 +8,7 @@ import { SubadminBranches } from "@/components/subadmin-branches";
 import { SubadminBackups } from "@/components/subadmin-backups";
 import { SubadminStats } from "@/components/subadmin-stats";
 import { BranchFaults } from "@/components/branch-faults";
+import { SubadminSignatureVerifier } from "@/components/subadmin-signature-verifier";
 import { Building2, Database, KeyRound, LayoutDashboard, LogOut, User } from "lucide-react";
 import {
   DropdownMenu,
@@ -170,6 +171,10 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
             </div>
           </TabsContent>
         </Tabs>
+
+        <div className="mt-10 pt-6 border-t border-border">
+          <SubadminSignatureVerifier />
+        </div>
       </main>
 
       <Dialog open={codeOpen} onOpenChange={setCodeOpen}>

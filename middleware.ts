@@ -22,7 +22,8 @@ export function middleware(request: NextRequest) {
   if (
     pathname === "/api/admin/backups/decrypt" ||
     pathname === "/api/admin/backups/intraday" ||
-    pathname === "/api/admin/backups/download"
+    pathname === "/api/admin/backups/download" ||
+    pathname === "/api/signature/verify"
   ) {
     return NextResponse.next();
   }

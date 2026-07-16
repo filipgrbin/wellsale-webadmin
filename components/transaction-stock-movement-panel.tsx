@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { FileSignature } from "lucide-react";
+import { formatBackupDateTime } from "@/lib/backup-preview-utils";
 import {
   findStockMovementsForTransaction,
   summarizeStockMovements,
@@ -18,6 +19,8 @@ export interface TransactionStockView {
   signatureFingerprint?: string | null;
   movementNumber?: string | null;
   stockMovementId?: number | null;
+  signedAt?: string | null;
+  signatureType?: string | null;
 }
 
 interface TransactionStockMovementPanelProps {
@@ -46,6 +49,8 @@ export function TransactionStockMovementPanel({
         signed: Boolean(transaction.signed),
         signerName: transaction.signerName ?? null,
         signatureFingerprint: transaction.signatureFingerprint ?? null,
+        signedAt: transaction.signedAt ?? null,
+        signatureType: transaction.signatureType ?? null,
       };
 
   return (
@@ -79,6 +84,24 @@ export function TransactionStockMovementPanel({
           </div>
         )}
 
+        {summary.signedAt && (
+          <div className="flex justify-between gap-4">
+            <span className="text-muted-foreground shrink-0">Čas podpisu</span>
+            <span className="font-medium text-right text-xs">
+              {formatBackupDateTime(summary.signedAt)}
+            </span>
+          </div>
+        )}
+
+        {summary.signatureType && (
+          <div className="flex justify-between gap-4">
+            <span className="text-muted-foreground shrink-0">Typ podpisu</span>
+            <span className="font-medium text-right font-mono text-xs">
+              {summary.signatureType}
+            </span>
+          </div>
+        )}
+
         {summary.signatureFingerprint && (
           <div className="space-y-1">
             <span className="text-muted-foreground text-xs">Fingerprint podpisu</span>
@@ -93,13 +116,18 @@ export function TransactionStockMovementPanel({
         <div className="pt-2 border-t border-border/50 space-y-2">
           <p className="text-xs text-muted-foreground">Položky pohybu ({linked.length})</p>
           {linked.map((m) => (
-            <div key={m.id} className="text-xs flex justify-between gap-2">
-              <span className="truncate text-muted-foreground">
-                #{m.movementNumber || m.id}
-                {m.productName ? ` · ${m.productName}` : ""}
-                {m.qty ? ` · ${m.qty} ks` : ""}
-              </span>
-              <span>{m.signed ? "✓" : "—"}</span>
+            <div key={m.id} className="text-xs space-y-0.5 border-b border-border/30 pb-1 last:border-0">
+              <div className="flex justify-between gap-2">
+                <span className="truncate text-muted-foreground">
+                  #{m.movementNumber || m.id}
+                  {m.productName ? ` · ${m.productName}` : ""}
+                  {m.qty ? ` · ${m.qty} ks` : ""}
+                </span>
+                <span>{m.signed ? "✓" : "—"}</span>
+              </div>
+              {m.signerName && (
+                <p className="text-muted-foreground">Podepsal: {m.signerName}</p>
+              )}
             </div>
           ))}
         </div>

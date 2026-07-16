@@ -6,6 +6,8 @@ export interface StockMovementRecord {
   signed: boolean;
   signerName: string | null;
   signatureFingerprint: string | null;
+  signedAt: string | null;
+  signatureType: string | null;
   productName: string | null;
   qty: number;
   reason: string | null;
@@ -73,6 +75,8 @@ export function parseTransactionStockMeta(row: Record<string, unknown>): {
   signatureFingerprint: string | null;
   movementNumber: string | null;
   stockMovementId: number | null;
+  signedAt: string | null;
+  signatureType: string | null;
 } {
   const stockMovementId = firstNumber(row, [
     "stock_movement_id",
@@ -105,6 +109,20 @@ export function parseTransactionStockMeta(row: Record<string, unknown>): {
     ]),
     movementNumber: movementNumber ?? (stockMovementId != null ? String(stockMovementId) : null),
     stockMovementId,
+    signedAt: firstString(row, [
+      "signed_at",
+      "signature_at",
+      "signed_time",
+      "podpis_cas",
+      "podpiseno_at",
+    ]),
+    signatureType: firstString(row, [
+      "signature_type",
+      "sig_type",
+      "subfilter",
+      "sub_filter",
+      "podpis_typ",
+    ]),
   };
 }
 
@@ -159,6 +177,20 @@ export function parseStockMovementRow(
       "signature_hash",
       "podpis_fingerprint",
     ]),
+    signedAt: firstString(row, [
+      "signed_at",
+      "signature_at",
+      "signed_time",
+      "podpis_cas",
+      "podpiseno_at",
+    ]),
+    signatureType: firstString(row, [
+      "signature_type",
+      "sig_type",
+      "subfilter",
+      "sub_filter",
+      "podpis_typ",
+    ]),
     productName: firstString(row, [
       "product_name",
       "name_snapshot",
@@ -196,13 +228,17 @@ export function transactionHasStockMeta(tx: {
   signatureFingerprint?: string | null;
   movementNumber?: string | null;
   stockMovementId?: number | null;
+  signedAt?: string | null;
+  signatureType?: string | null;
 }): boolean {
   return Boolean(
     tx.signed ||
       tx.signerName ||
       tx.signatureFingerprint ||
       tx.movementNumber ||
-      tx.stockMovementId
+      tx.stockMovementId ||
+      tx.signedAt ||
+      tx.signatureType
   );
 }
 
@@ -211,6 +247,8 @@ export function summarizeStockMovements(movements: StockMovementRecord[]): {
   signed: boolean;
   signerName: string | null;
   signatureFingerprint: string | null;
+  signedAt: string | null;
+  signatureType: string | null;
 } {
   const numbers = [
     ...new Set(
@@ -224,11 +262,15 @@ export function summarizeStockMovements(movements: StockMovementRecord[]): {
     movements.find((m) => m.signerName)?.signerName ?? null;
   const signatureFingerprint =
     movements.find((m) => m.signatureFingerprint)?.signatureFingerprint ?? null;
+  const signedAt = movements.find((m) => m.signedAt)?.signedAt ?? null;
+  const signatureType = movements.find((m) => m.signatureType)?.signatureType ?? null;
 
   return {
     movementNumbers: numbers,
     signed,
     signerName,
     signatureFingerprint,
+    signedAt,
+    signatureType,
   };
 }
