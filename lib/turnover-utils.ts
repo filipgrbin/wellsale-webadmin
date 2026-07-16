@@ -115,6 +115,17 @@ export function pragueHourFromIso(iso: string): number {
   return n === 24 ? 0 : n;
 }
 
+/** Hour (0–23) in Europe/Prague from POS / SQLite timestamps. */
+export function pragueHourFromTimestamp(ts: string): number {
+  const s = String(ts).trim();
+  if (!s) return 0;
+  const local = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (local && !s.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(s)) {
+    return Number(local[4]);
+  }
+  return pragueHourFromIso(s);
+}
+
 export function lastNDays(n: number): string[] {
   const out: string[] = [];
   const now = Date.now();
@@ -204,6 +215,82 @@ export function rangeDayCount(from: string, to: string): number {
   return datesInRange(from, to).length;
 }
 
+export interface HourlySalePoint {
+  branchId: number;
+  timestamp: string;
+  revenue: number;
+}
+
+export function saleMatchesDateRange(
+  timestamp: string,
+  from: string,
+  to: string,
+  fallbackDate?: string
+): boolean {
+  const d = normalizeCloseDate(timestamp);
+  if (d) return d >= from && d <= to;
+  if (fallbackDate) return fallbackDate >= from && fallbackDate <= to;
+  return false;
+}
+
+/** Latest uzaverka backup per branch for a specific business day. */
+export function pickLatestUzaverkaBackupsForDay(
+  backups: Backup[],
+  closeDate: string,
+  opts?: { licenseKey?: string; branchIds?: number[] | null }
+): Backup[] {
+  if (opts?.branchIds != null && opts.branchIds.length === 0) return [];
+
+  const branchFilter =
+    opts?.branchIds && opts.branchIds.length > 0 ? new Set(opts.branchIds) : null;
+  const latest = new Map<number, Backup>();
+
+  for (const b of backups) {
+    if (b.kind !== "uzaverka" && b.kind !== "close") continue;
+    if (opts?.licenseKey && b.license_key !== opts.licenseKey) continue;
+    if (branchFilter && !branchFilter.has(b.branch_id)) continue;
+
+    const cd = extractCloseDate(b);
+    if (cd !== closeDate) continue;
+
+    const ex = latest.get(b.branch_id);
+    if (!ex || new Date(b.uploaded_at).getTime() > new Date(ex.uploaded_at).getTime()) {
+      latest.set(b.branch_id, b);
+    }
+  }
+
+  return [...latest.values()];
+}
+
+export function buildHourlyChartBucketsFromSales(
+  sales: HourlySalePoint[],
+  from: string,
+  to: string
+): ChartBucket[] {
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+  const buckets = new Map<number, ChartBucket>();
+  for (const h of hours) {
+    buckets.set(h, {
+      key: `h${h}`,
+      label: `${String(h).padStart(2, "0")}:00`,
+      byBranch: new Map(),
+      total: 0,
+    });
+  }
+  for (const sale of sales) {
+    if (!saleMatchesDateRange(sale.timestamp, from, to)) continue;
+    const h = pragueHourFromTimestamp(sale.timestamp);
+    const bucket = buckets.get(h);
+    if (!bucket) continue;
+    bucket.byBranch.set(
+      sale.branchId,
+      (bucket.byBranch.get(sale.branchId) ?? 0) + sale.revenue
+    );
+    bucket.total += sale.revenue;
+  }
+  return hours.map((h) => buckets.get(h)!);
+}
+
 /** Latest uzaverka per branch + close_date. branchIds: null = all, [] = none */
 export function parseClosureRecords(
   backups: Backup[],
@@ -289,25 +376,8 @@ export function buildChartBuckets(
   const filtered = filterRecordsInRange(records, from, to);
 
   if (granularity === "hour") {
-    const hours = Array.from({ length: 24 }, (_, i) => i);
-    const buckets = new Map<number, ChartBucket>();
-    for (const h of hours) {
-      buckets.set(h, {
-        key: `h${h}`,
-        label: `${String(h).padStart(2, "0")}:00`,
-        byBranch: new Map(),
-        total: 0,
-      });
-    }
-    // Intraday: only closures whose business date falls in the selected range
-    for (const r of filtered) {
-      const h = pragueHourFromIso(r.uploadedAt);
-      const bucket = buckets.get(h);
-      if (!bucket) continue;
-      bucket.byBranch.set(r.branchId, (bucket.byBranch.get(r.branchId) ?? 0) + r.revenue);
-      bucket.total += r.revenue;
-    }
-    return hours.map((h) => buckets.get(h)!);
+    // Intradenní graf používá transakce z .wsbak — viz buildHourlyChartBucketsFromSales.
+    return buildHourlyChartBucketsFromSales([], from, to);
   }
 
   if (granularity === "month") {

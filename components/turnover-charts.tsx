@@ -10,14 +10,17 @@ import {
   branchDataKey,
   bucketsToRechartsData,
   buildChartBuckets,
+  buildHourlyChartBucketsFromSales,
   formatCurrency,
   getEffectiveDateRange,
   parseClosureRecords,
+  pickLatestUzaverkaBackupsForDay,
   pragueDate,
   rangeDayCount,
   sumRecords,
   filterRecordsInRange,
 } from "@/lib/turnover-utils";
+import { fetchHourlySalesForChart } from "@/lib/turnover-hourly";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -196,10 +199,45 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
 
   const rangeSummary = useMemo(() => sumRecords(rangeRecords), [rangeRecords]);
 
-  const buckets = useMemo(
-    () => buildChartBuckets(allRecords, granularity, from, to),
-    [allRecords, granularity, from, to]
+  const needsHourlySales = granularity === "hour" && canUseHourly;
+
+  const hourlyBackupIds = useMemo(() => {
+    if (!needsHourlySales || !backupsData?.backups) return "";
+    return pickLatestUzaverkaBackupsForDay(backupsData.backups, from, {
+      licenseKey: effectiveLicense,
+      branchIds: activeBranchIds,
+    })
+      .map((b) => b.id)
+      .sort((a, b) => a - b)
+      .join(",");
+  }, [needsHourlySales, backupsData, from, effectiveLicense, activeBranchIds]);
+
+  const { data: hourlySales, isLoading: hourlyLoading } = useSWR(
+    needsHourlySales && backupsData
+      ? [
+          "turnover-hourly-sales",
+          effectiveLicense ?? "all",
+          from,
+          activeBranchIds ? [...activeBranchIds].sort((a, b) => a - b).join(",") : "all",
+          hourlyBackupIds,
+        ]
+      : null,
+    () =>
+      fetchHourlySalesForChart(backupsData!.backups, from, {
+        licenseKey: effectiveLicense,
+        branchIds: activeBranchIds,
+      }),
+    { revalidateOnFocus: false }
   );
+
+  const buckets = useMemo(() => {
+    if (granularity === "hour") {
+      return buildHourlyChartBucketsFromSales(hourlySales ?? [], from, to);
+    }
+    return buildChartBuckets(allRecords, granularity, from, to);
+  }, [allRecords, granularity, from, to, hourlySales]);
+
+  const chartLoading = isLoading || (needsHourlySales && hourlyLoading);
 
   const stacked = allBranches;
 
@@ -414,11 +452,15 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
             Graf tržeb
           </CardTitle>
           <CardDescription>
-            {isLoading
-              ? "Načítání dat…"
-              : allBranches && chartOutput.stacked
-                ? "Skládaný sloupec = prodejny v daném období (najeď pro kód a částku)"
-                : "Tržby z uzávěrek ve zvoleném rozsahu"}
+            {chartLoading
+              ? granularity === "hour"
+                ? "Načítání transakcí z uzávěrek…"
+                : "Načítání dat…"
+              : granularity === "hour"
+                ? "Tržby podle času jednotlivých prodejů z .wsbak"
+                : allBranches && chartOutput.stacked
+                  ? "Skládaný sloupec = prodejny v daném období (najeď pro kód a částku)"
+                  : "Tržby z uzávěrek ve zvoleném rozsahu"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -440,11 +482,17 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
                   <p className="text-sm text-muted-foreground py-12 text-center">
                     Vyberte alespoň jednu prodejnu v seznamu výše
                   </p>
+                ) : chartLoading ? (
+                  <p className="text-sm text-muted-foreground py-12 text-center">
+                    Načítání…
+                  </p>
                 ) : chartOutput.rows.every(
                     (r) => Number(r.total) === 0 && Number(r.revenue ?? 0) === 0
                   ) ? (
                   <p className="text-sm text-muted-foreground py-12 text-center">
-                    V tomto období nejsou žádné uzávěrky
+                    {granularity === "hour"
+                      ? "Pro intradenní graf chybí uzávěrka s transakcemi pro tento den"
+                      : "V tomto období nejsou žádné uzávěrky"}
                   </p>
                 ) : (
                   <ChartContainer config={chartConfig} className="h-[320px] w-full">
