@@ -1,16 +1,16 @@
-import { decryptBackupOnServer, type Backup } from "@/lib/api";
+import type { Backup } from "@/lib/api";
 import {
-  extractCloseDate,
-  normalizeCloseDate,
   pickLatestUzaverkaBackupsForDay,
   type HourlySalePoint,
 } from "@/lib/turnover-utils";
+
+const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "SUPER_SECRET_ADMIN_NKEY";
 
 function isDecryptableBackup(fileName: string): boolean {
   return fileName.endsWith(".wsbak") || fileName.endsWith(".db");
 }
 
-/** Load individual sale timestamps from uzaverka backups for intraday chart. */
+/** Load sale timestamps from uzaverka .wsbak for intraday chart (single batch API call). */
 export async function fetchHourlySalesForChart(
   backups: Backup[],
   day: string,
@@ -22,27 +22,27 @@ export async function fetchHourlySalesForChart(
 
   if (dayBackups.length === 0) return [];
 
-  const results = await Promise.all(
-    dayBackups.map(async (backup) => {
-      const backupCloseDate = extractCloseDate(backup) ?? day;
-      try {
-        const data = await decryptBackupOnServer(backup.id);
-        return data.prodeje
-          .filter((p) => {
-            const d = normalizeCloseDate(p.datum);
-            if (d) return d === day;
-            return backupCloseDate === day;
-          })
-          .map((p) => ({
-            branchId: backup.branch_id,
-            timestamp: p.datum,
-            revenue: Number(p.celkem) || 0,
-          }));
-      } catch {
-        return [];
-      }
-    })
-  );
+  const response = await fetch("/api/admin/backups/intraday", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-key": ADMIN_KEY,
+    },
+    body: JSON.stringify({
+      backupIds: dayBackups.map((b) => b.id),
+      day,
+    }),
+  });
 
-  return results.flat();
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "Intraday fetch failed" }));
+    throw new Error(err.error || "Intraday fetch failed");
+  }
+
+  const result = await response.json();
+  if (!result.ok) {
+    throw new Error(result.error || "Intraday fetch failed");
+  }
+
+  return (result.sales ?? []) as HourlySalePoint[];
 }

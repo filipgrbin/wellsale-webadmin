@@ -212,8 +212,10 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
       .join(",");
   }, [needsHourlySales, backupsData, from, effectiveLicense, activeBranchIds]);
 
-  const { data: hourlySales, isLoading: hourlyLoading } = useSWR(
-    needsHourlySales && backupsData
+  const hasHourlyBackups = Boolean(hourlyBackupIds);
+
+  const { data: hourlySales, isLoading: hourlyLoading, error: hourlyError } = useSWR(
+    needsHourlySales && backupsData && hasHourlyBackups
       ? [
           "turnover-hourly-sales",
           effectiveLicense ?? "all",
@@ -237,7 +239,9 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
     return buildChartBuckets(allRecords, granularity, from, to);
   }, [allRecords, granularity, from, to, hourlySales]);
 
-  const chartLoading = isLoading || (needsHourlySales && hourlyLoading);
+  const chartLoading = isLoading || (needsHourlySales && hasHourlyBackups && hourlyLoading);
+  const hourlyReady =
+    !needsHourlySales || !hasHourlyBackups || (hourlySales !== undefined && !hourlyLoading);
 
   const stacked = allBranches;
 
@@ -482,9 +486,11 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
                   <p className="text-sm text-muted-foreground py-12 text-center">
                     Vyberte alespoň jednu prodejnu v seznamu výše
                   </p>
-                ) : chartLoading ? (
+                ) : chartLoading || !hourlyReady ? (
                   <p className="text-sm text-muted-foreground py-12 text-center">
-                    Načítání…
+                    {hourlyError
+                      ? "Nepodařilo se načíst transakce z uzávěrky"
+                      : "Načítání transakcí z uzávěrky…"}
                   </p>
                 ) : chartOutput.rows.every(
                     (r) => Number(r.total) === 0 && Number(r.revenue ?? 0) === 0

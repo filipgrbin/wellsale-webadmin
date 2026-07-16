@@ -21,6 +21,7 @@ export function middleware(request: NextRequest) {
   // (subadmin panel also uses these for preview without an admin cookie).
   if (
     pathname === "/api/admin/backups/decrypt" ||
+    pathname === "/api/admin/backups/intraday" ||
     pathname === "/api/admin/backups/download"
   ) {
     return NextResponse.next();
