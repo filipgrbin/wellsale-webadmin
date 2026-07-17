@@ -421,6 +421,8 @@ export interface ParsedBackupData {
     signed: boolean;
     signerName: string | null;
     signatureFingerprint: string | null;
+    signedAt: string | null;
+    signatureType: string | null;
     productName: string | null;
     qty: number;
     reason: string | null;

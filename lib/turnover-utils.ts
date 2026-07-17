@@ -1,3 +1,4 @@
+import type { Backup } from "@/lib/api";
 import {
   posStampDate,
   posStampInDayRange,

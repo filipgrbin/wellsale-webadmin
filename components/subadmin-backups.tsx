@@ -79,6 +79,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  EyeOff,
   FileText,
   ShoppingCart,
   Banknote,
