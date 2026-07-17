@@ -3,13 +3,9 @@
 import { useState, useEffect } from "react";
 import { SubadminLogin } from "@/components/subadmin-login";
 import { SubadminDashboard } from "@/components/subadmin-dashboard";
+import type { SubadminSession } from "@/lib/subadmin-session";
 
-export interface SubadminSession {
-  licenseKey: string;
-  ownerName: string;
-  ownerEmail: string;
-  loginCode: string;
-}
+export type { SubadminSession } from "@/lib/subadmin-session";
 
 export default function SubadminPage() {
   const [session, setSession] = useState<SubadminSession | null>(null);

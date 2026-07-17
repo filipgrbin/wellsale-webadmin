@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Key, AlertCircle, Shield } from "lucide-react";
-import type { SubadminSession } from "@/app/page";
+import type { SubadminSession } from "@/lib/subadmin-session";
 
 interface SubadminLoginProps {
   onLogin: (session: SubadminSession) => void;

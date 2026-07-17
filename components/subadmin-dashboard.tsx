@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { SubadminSession } from "@/app/page";
+import type { SubadminSession } from "@/lib/subadmin-session";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { SubadminBranches } from "@/components/subadmin-branches";
