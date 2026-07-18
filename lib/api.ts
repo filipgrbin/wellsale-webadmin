@@ -28,7 +28,7 @@ async function apiRequest<T>(endpoint: string, options: ApiOptions = {}): Promis
   const data = await response.json();
   
   if (!response.ok) {
-    throw new Error(data.reason || "API request failed");
+    throw new Error(data.reason || data.error || data.message || "API request failed");
   }
 
   return data;
@@ -576,4 +576,152 @@ export async function decryptBackupOnServer(id: number): Promise<ParsedBackupDat
   }
   
   return result.data;
+}
+
+// App releases (electron-updater artifacts in private UPDATE_S3_BUCKET)
+export type ReleaseChannel = "stable" | "beta";
+
+export interface AppRelease {
+  id: number;
+  version: string;
+  s3_prefix: string;
+  channel: ReleaseChannel | string;
+  rollout_percent: number;
+  forced: boolean;
+  active: boolean;
+  release_notes: string | null;
+  created_at: string;
+  published_at: string | null;
+}
+
+export interface ReleaseUploadSlot {
+  fileName: string;
+  s3Key: string;
+  uploadUrl: string;
+  expiresIn: number;
+  /** Present for older API responses; prefer `headers`. */
+  contentType?: string;
+  /**
+   * Headers that must be sent with the PUT (signed by the API), e.g.
+   * Content-Type + x-amz-server-side-encryption.
+   */
+  headers?: Record<string, string>;
+}
+
+export async function getReleases(): Promise<{ ok: boolean; releases: AppRelease[] }> {
+  return apiRequest("/api/admin/releases");
+}
+
+export async function getReleaseUploadUrls(data: {
+  version: string;
+  platform?: "win";
+  files: string[];
+}): Promise<{
+  ok: boolean;
+  version: string;
+  s3Prefix: string;
+  bucket: string;
+  uploads: ReleaseUploadSlot[];
+}> {
+  return apiRequest("/api/admin/releases/upload-urls", {
+    method: "POST",
+    body: { platform: "win", ...data },
+  });
+}
+
+export async function createRelease(data: {
+  version: string;
+  channel?: ReleaseChannel;
+  rollout_percent?: number;
+  forced?: boolean;
+  active?: boolean;
+  release_notes?: string | null;
+  platform?: "win";
+  verifyS3?: boolean;
+}): Promise<{ ok: boolean; release: AppRelease }> {
+  return apiRequest("/api/admin/releases", {
+    method: "POST",
+    body: { platform: "win", verifyS3: true, ...data },
+  });
+}
+
+export async function updateRelease(data: {
+  id?: number;
+  version?: string;
+  channel?: ReleaseChannel;
+  rollout_percent?: number;
+  forced?: boolean;
+  active?: boolean;
+  release_notes?: string | null;
+}): Promise<{ ok: boolean; release: AppRelease }> {
+  return apiRequest("/api/admin/releases/update", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function deleteRelease(data: {
+  id?: number;
+  version?: string;
+  deleteS3?: boolean;
+}): Promise<{
+  ok: boolean;
+  deleted: { id: number; version: string; s3Prefix: string; deletedObjects: number };
+}> {
+  return apiRequest("/api/admin/releases/delete", {
+    method: "POST",
+    body: { deleteS3: true, ...data },
+  });
+}
+
+function releaseUploadHeaders(upload: ReleaseUploadSlot): Record<string, string> {
+  if (upload.headers && Object.keys(upload.headers).length > 0) {
+    return upload.headers;
+  }
+  // Fallback for older upload-urls responses that only returned contentType
+  if (upload.contentType) {
+    return { "Content-Type": upload.contentType };
+  }
+  return {};
+}
+
+/**
+ * Upload a file to a presigned S3 PUT URL from upload-urls.
+ * Must send exactly `upload.headers` from the API (signed), never invent Content-Type.
+ */
+export async function uploadReleaseFileToS3(
+  upload: ReleaseUploadSlot,
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<void> {
+  const headers = releaseUploadHeaders(upload);
+
+  if (!onProgress) {
+    const res = await fetch(upload.uploadUrl, {
+      method: "PUT",
+      body: file,
+      headers,
+    });
+    if (!res.ok) throw new Error(`S3 upload failed (${res.status})`);
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", upload.uploadUrl);
+    for (const [key, value] of Object.entries(headers)) {
+      xhr.setRequestHeader(key, value);
+    }
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`S3 upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error("S3 upload network error"));
+    xhr.send(file);
+  });
 }
