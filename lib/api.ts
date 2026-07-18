@@ -675,52 +675,51 @@ export async function deleteRelease(data: {
 }
 
 /**
- * Upload a release artifact via same-origin Next.js proxy → S3 presigned PUT.
- * Browser never talks to S3 directly (avoids CORS on UPDATE_S3_BUCKET).
- * Proxy sends exactly `upload.headers` from the API.
+ * Direct browser PUT to S3 presigned URL (no proxy — large Setup.exe must not go through Next/API).
+ * Sends exactly `upload.headers` from upload-urls (e.g. x-amz-server-side-encryption).
+ * Requires CORS on the releases bucket for this origin.
  */
 export async function uploadReleaseFileToS3(
   upload: ReleaseUploadSlot,
   file: File,
   onProgress?: (pct: number) => void
 ): Promise<void> {
-  const form = new FormData();
-  form.append("file", file, file.name);
-  form.append("uploadUrl", upload.uploadUrl);
-  form.append("headers", JSON.stringify(upload.headers || {}));
+  const headers = { ...(upload.headers || {}) };
+
+  if (!onProgress) {
+    const res = await fetch(upload.uploadUrl, {
+      method: "PUT",
+      body: file,
+      headers,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`S3 upload failed (${res.status})${body ? `: ${body.slice(0, 200)}` : ""}`);
+    }
+    return;
+  }
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/admin/releases/s3-put");
+    xhr.open("PUT", upload.uploadUrl);
+    for (const [key, value] of Object.entries(headers)) {
+      xhr.setRequestHeader(key, value);
+    }
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) {
+      if (e.lengthComputable) {
         onProgress(Math.round((e.loaded / e.total) * 100));
       }
     };
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText || "{}");
-          if (data.ok === false) {
-            reject(new Error(data.detail || data.error || "S3 upload failed"));
-            return;
-          }
-        } catch {
-          // empty / non-JSON success body is fine
-        }
-        resolve();
-        return;
-      }
-      let msg = `S3 upload failed (${xhr.status})`;
-      try {
-        const data = JSON.parse(xhr.responseText || "{}");
-        msg = data.detail || data.error || msg;
-      } catch {
-        // ignore
-      }
-      reject(new Error(msg));
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`S3 upload failed (${xhr.status})`));
     };
-    xhr.onerror = () => reject(new Error("Upload network error"));
-    xhr.send(form);
+    xhr.onerror = () =>
+      reject(
+        new Error(
+          "S3 upload CORS/network error — na bucketu wellsale-releases musí být CORS pro PUT z webadmin.wellsale.cz"
+        )
+      );
+    xhr.send(file);
   });
 }
