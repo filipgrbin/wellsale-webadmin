@@ -80,7 +80,6 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
-  FileText,
   ShoppingCart,
   Banknote,
   Receipt,
@@ -609,10 +608,6 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                       <BarChart3 className="h-4 w-4" />
                       Analýza
                     </TabsTrigger>
-                    <TabsTrigger value="uzaverky" className="gap-2">
-                      <FileText className="h-4 w-4" />
-                      Uzávěrky ({decryptedData.uzaverky.length})
-                    </TabsTrigger>
                     <TabsTrigger value="prodeje" className="gap-2">
                       <ShoppingCart className="h-4 w-4" />
                       Prodeje ({decryptedData.prodeje.length})
@@ -815,44 +810,6 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                         </CardContent>
                       </Card>
                     </div>
-                  </TabsContent>
-                  
-                  <TabsContent value="uzaverky" className="mt-4">
-                    <ScrollArea className="h-[400px]">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Datum</TableHead>
-                            <TableHead>Tržba</TableHead>
-                            <TableHead>Hotovost</TableHead>
-                            <TableHead>QR platby</TableHead>
-                            <TableHead>Transakcí</TableHead>
-                            <TableHead>Položek</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {decryptedData.uzaverky.map((uz) => (
-                            <TableRow key={uz.id}>
-                              <TableCell className="font-medium">{uz.close_date || uz.datum}</TableCell>
-                              <TableCell className="text-green-500 font-medium">
-                                {formatCurrency(uz.total_revenue || uz.payload_json?.total_revenue || 0)}
-                              </TableCell>
-                              <TableCell>{formatCurrency(uz.cash_total || uz.payload_json?.cash_total || 0)}</TableCell>
-                              <TableCell>{formatCurrency(uz.qr_total || uz.payload_json?.qr_total || 0)}</TableCell>
-                              <TableCell>{uz.tx_count || uz.payload_json?.tx_count || 0}</TableCell>
-                              <TableCell>{uz.total_items || uz.payload_json?.total_items || "-"}</TableCell>
-                            </TableRow>
-                          ))}
-                          {decryptedData.uzaverky.length === 0 && (
-                            <TableRow>
-                              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                                Žádné uzávěrky
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </ScrollArea>
                   </TabsContent>
                   
                   <TabsContent value="prodeje" className="mt-4">

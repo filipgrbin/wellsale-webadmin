@@ -1,26 +1,17 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
-import { FileSignature } from "lucide-react";
-import { formatBackupDateTime } from "@/lib/backup-preview-utils";
 import {
   findStockMovementsForTransaction,
-  summarizeStockMovements,
-  transactionHasStockMeta,
   type StockMovementRecord,
 } from "@/lib/stock-movement-utils";
+import { Package } from "lucide-react";
 
 export interface TransactionStockView {
   id: number;
   cislo_dokladu?: string;
   receipt_number?: string;
-  signed?: boolean;
-  signerName?: string | null;
-  signatureFingerprint?: string | null;
   movementNumber?: string | null;
   stockMovementId?: number | null;
-  signedAt?: string | null;
-  signatureType?: string | null;
 }
 
 interface TransactionStockMovementPanelProps {
@@ -28,110 +19,33 @@ interface TransactionStockMovementPanelProps {
   stockMovements?: StockMovementRecord[];
 }
 
+/** Shows linked stock movement numbers only — no signature status. */
 export function TransactionStockMovementPanel({
   transaction,
   stockMovements = [],
 }: TransactionStockMovementPanelProps) {
   const linked = findStockMovementsForTransaction(stockMovements, transaction);
-  const hasMovementRows = linked.length > 0;
-  const hasTxMeta = transactionHasStockMeta(transaction);
+  const numbers = [
+    ...new Set(
+      [
+        ...linked.map((m) => m.movementNumber || String(m.id)),
+        transaction.movementNumber,
+        transaction.stockMovementId != null ? String(transaction.stockMovementId) : null,
+      ].filter(Boolean) as string[]
+    ),
+  ];
 
-  if (!hasMovementRows && !hasTxMeta) return null;
-
-  const summary = hasMovementRows
-    ? summarizeStockMovements(linked)
-    : {
-        movementNumbers: transaction.movementNumber
-          ? [transaction.movementNumber]
-          : transaction.stockMovementId
-            ? [String(transaction.stockMovementId)]
-            : [],
-        signed: Boolean(transaction.signed),
-        signerName: transaction.signerName ?? null,
-        signatureFingerprint: transaction.signatureFingerprint ?? null,
-        signedAt: transaction.signedAt ?? null,
-        signatureType: transaction.signatureType ?? null,
-      };
+  if (numbers.length === 0 && linked.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-border bg-secondary/30 p-4 space-y-3 shrink-0">
+    <div className="rounded-lg border border-border bg-secondary/30 p-3 space-y-1 shrink-0 text-sm">
       <div className="flex items-center gap-2">
-        <FileSignature className="h-4 w-4 text-primary shrink-0" />
-        <p className="font-medium text-sm">Skladový pohyb</p>
+        <Package className="h-4 w-4 text-muted-foreground shrink-0" />
+        <span className="text-muted-foreground">Číslo pohybu ve skladu</span>
+        <span className="font-mono text-xs font-medium ml-auto">
+          {numbers.length ? numbers.join(", ") : "—"}
+        </span>
       </div>
-
-      <div className="grid gap-2 text-sm">
-        <div className="flex justify-between gap-4">
-          <span className="text-muted-foreground">Podepsáno</span>
-          <Badge variant={summary.signed ? "default" : "secondary"}>
-            {summary.signed ? "Ano" : "Ne"}
-          </Badge>
-        </div>
-
-        {summary.movementNumbers.length > 0 && (
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground shrink-0">Číslo pohybu</span>
-            <span className="font-medium text-right font-mono text-xs">
-              {summary.movementNumbers.join(", ")}
-            </span>
-          </div>
-        )}
-
-        {summary.signerName && (
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground shrink-0">Podepsal</span>
-            <span className="font-medium text-right">{summary.signerName}</span>
-          </div>
-        )}
-
-        {summary.signedAt && (
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground shrink-0">Čas podpisu</span>
-            <span className="font-medium text-right text-xs">
-              {formatBackupDateTime(summary.signedAt)}
-            </span>
-          </div>
-        )}
-
-        {summary.signatureType && (
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground shrink-0">Typ podpisu</span>
-            <span className="font-medium text-right font-mono text-xs">
-              {summary.signatureType}
-            </span>
-          </div>
-        )}
-
-        {summary.signatureFingerprint && (
-          <div className="space-y-1">
-            <span className="text-muted-foreground text-xs">Fingerprint podpisu</span>
-            <p className="font-mono text-[11px] break-all bg-background/80 rounded px-2 py-1.5 border border-border/50">
-              {summary.signatureFingerprint}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {linked.length > 1 && (
-        <div className="pt-2 border-t border-border/50 space-y-2">
-          <p className="text-xs text-muted-foreground">Položky pohybu ({linked.length})</p>
-          {linked.map((m) => (
-            <div key={m.id} className="text-xs space-y-0.5 border-b border-border/30 pb-1 last:border-0">
-              <div className="flex justify-between gap-2">
-                <span className="truncate text-muted-foreground">
-                  #{m.movementNumber || m.id}
-                  {m.productName ? ` · ${m.productName}` : ""}
-                  {m.qty ? ` · ${m.qty} ks` : ""}
-                </span>
-                <span>{m.signed ? "✓" : "—"}</span>
-              </div>
-              {m.signerName && (
-                <p className="text-muted-foreground">Podepsal: {m.signerName}</p>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
