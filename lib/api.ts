@@ -674,35 +674,32 @@ export async function deleteRelease(data: {
   });
 }
 
-function releaseUploadHeaders(upload: ReleaseUploadSlot): Record<string, string> {
-  if (upload.headers && Object.keys(upload.headers).length > 0) {
-    return upload.headers;
-  }
-  // Fallback for older upload-urls responses that only returned contentType
-  if (upload.contentType) {
-    return { "Content-Type": upload.contentType };
-  }
-  return {};
-}
-
 /**
  * Upload a file to a presigned S3 PUT URL from upload-urls.
- * Must send exactly `upload.headers` from the API (signed), never invent Content-Type.
+ * Sends exactly `upload.headers` from the API (e.g. x-amz-server-side-encryption).
+ * Do not invent Content-Type — only headers the API signed/returned.
+ *
+ * Requires CORS on UPDATE_S3_BUCKET allowing PUT from this origin
+ * (browser always preflights custom x-amz-* headers).
  */
 export async function uploadReleaseFileToS3(
   upload: ReleaseUploadSlot,
   file: File,
   onProgress?: (pct: number) => void
 ): Promise<void> {
-  const headers = releaseUploadHeaders(upload);
+  const headers = { ...(upload.headers || {}) };
 
+  // Prefer fetch (matches API contract). XHR only for upload progress UI.
   if (!onProgress) {
     const res = await fetch(upload.uploadUrl, {
       method: "PUT",
       body: file,
       headers,
     });
-    if (!res.ok) throw new Error(`S3 upload failed (${res.status})`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`S3 upload failed (${res.status})${body ? `: ${body.slice(0, 200)}` : ""}`);
+    }
     return;
   }
 
@@ -721,7 +718,12 @@ export async function uploadReleaseFileToS3(
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else reject(new Error(`S3 upload failed (${xhr.status})`));
     };
-    xhr.onerror = () => reject(new Error("S3 upload network error"));
+    xhr.onerror = () =>
+      reject(
+        new Error(
+          "S3 upload network/CORS error — zkontroluj CORS na UPDATE_S3_BUCKET (PUT + x-amz-server-side-encryption)"
+        )
+      );
     xhr.send(file);
   });
 }
