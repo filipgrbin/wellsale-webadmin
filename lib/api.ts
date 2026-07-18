@@ -675,55 +675,52 @@ export async function deleteRelease(data: {
 }
 
 /**
- * Upload a file to a presigned S3 PUT URL from upload-urls.
- * Sends exactly `upload.headers` from the API (e.g. x-amz-server-side-encryption).
- * Do not invent Content-Type — only headers the API signed/returned.
- *
- * Requires CORS on UPDATE_S3_BUCKET allowing PUT from this origin
- * (browser always preflights custom x-amz-* headers).
+ * Upload a release artifact via same-origin Next.js proxy → S3 presigned PUT.
+ * Browser never talks to S3 directly (avoids CORS on UPDATE_S3_BUCKET).
+ * Proxy sends exactly `upload.headers` from the API.
  */
 export async function uploadReleaseFileToS3(
   upload: ReleaseUploadSlot,
   file: File,
   onProgress?: (pct: number) => void
 ): Promise<void> {
-  const headers = { ...(upload.headers || {}) };
-
-  // Prefer fetch (matches API contract). XHR only for upload progress UI.
-  if (!onProgress) {
-    const res = await fetch(upload.uploadUrl, {
-      method: "PUT",
-      body: file,
-      headers,
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`S3 upload failed (${res.status})${body ? `: ${body.slice(0, 200)}` : ""}`);
-    }
-    return;
-  }
+  const form = new FormData();
+  form.append("file", file, file.name);
+  form.append("uploadUrl", upload.uploadUrl);
+  form.append("headers", JSON.stringify(upload.headers || {}));
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("PUT", upload.uploadUrl);
-    for (const [key, value] of Object.entries(headers)) {
-      xhr.setRequestHeader(key, value);
-    }
+    xhr.open("POST", "/api/admin/releases/s3-put");
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
+      if (e.lengthComputable && onProgress) {
         onProgress(Math.round((e.loaded / e.total) * 100));
       }
     };
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new Error(`S3 upload failed (${xhr.status})`));
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText || "{}");
+          if (data.ok === false) {
+            reject(new Error(data.detail || data.error || "S3 upload failed"));
+            return;
+          }
+        } catch {
+          // empty / non-JSON success body is fine
+        }
+        resolve();
+        return;
+      }
+      let msg = `S3 upload failed (${xhr.status})`;
+      try {
+        const data = JSON.parse(xhr.responseText || "{}");
+        msg = data.detail || data.error || msg;
+      } catch {
+        // ignore
+      }
+      reject(new Error(msg));
     };
-    xhr.onerror = () =>
-      reject(
-        new Error(
-          "S3 upload network/CORS error — zkontroluj CORS na UPDATE_S3_BUCKET (PUT + x-amz-server-side-encryption)"
-        )
-      );
-    xhr.send(file);
+    xhr.onerror = () => reject(new Error("Upload network error"));
+    xhr.send(form);
   });
 }
