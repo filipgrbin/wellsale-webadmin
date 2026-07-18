@@ -555,6 +555,7 @@ function EditReleaseDialog({
   onOpenChange: (o: boolean) => void;
   onDone: () => void;
 }) {
+  const [version, setVersion] = useState("");
   const [channel, setChannel] = useState<ReleaseChannel>("stable");
   const [rollout, setRollout] = useState("0");
   const [forced, setForced] = useState(false);
@@ -566,6 +567,7 @@ function EditReleaseDialog({
 
   useEffect(() => {
     if (!release) return;
+    setVersion(release.version);
     setChannel(release.channel === "beta" ? "beta" : "stable");
     setRollout(String(release.rollout_percent ?? 0));
     setForced(!!release.forced);
@@ -575,17 +577,25 @@ function EditReleaseDialog({
 
   const save = async () => {
     if (!release) return;
+    const v = version.trim();
+    if (!VERSION_RE.test(v)) {
+      toast.error("Neplatná verze (očekáváno např. 1.5.9)");
+      return;
+    }
     setSaving(true);
     try {
+      const renamed = v !== release.version;
       await updateRelease({
         id: release.id,
+        version: renamed ? release.version : v,
+        ...(renamed ? { new_version: v } : {}),
         channel,
         rollout_percent: Math.max(0, Math.min(100, Number(rollout) || 0)),
         forced,
         active,
         release_notes: notes.trim() || null,
       });
-      toast.success(`Release ${release.version} uložen`);
+      toast.success(`Release ${v} uložen`);
       onDone();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Uložení selhalo");
@@ -598,12 +608,28 @@ function EditReleaseDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Upravit {release?.version}</DialogTitle>
+          <DialogTitle>Upravit release</DialogTitle>
           <DialogDescription>
             Prefix S3: <code className="text-xs">{release?.s3_prefix}</code>
+            {version.trim() && version.trim() !== release?.version && (
+              <span className="block mt-1 text-amber-600 dark:text-amber-400">
+                Přejmenování verze mění jen záznam v DB — S3 soubory zůstanou pod starým prefixem,
+                pokud to backend nepřesune.
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
+          <div className="grid gap-2">
+            <Label htmlFor="edit-version">Název / verze</Label>
+            <Input
+              id="edit-version"
+              className="font-mono"
+              placeholder="1.5.9"
+              value={version}
+              onChange={(e) => setVersion(e.target.value.trim())}
+            />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2">
               <Label>Kanál</Label>
@@ -651,7 +677,7 @@ function EditReleaseDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Zrušit
           </Button>
-          <Button disabled={saving} onClick={() => void save()}>
+          <Button disabled={saving || !version.trim()} onClick={() => void save()}>
             {saving ? "Ukládám…" : "Uložit"}
           </Button>
         </DialogFooter>
