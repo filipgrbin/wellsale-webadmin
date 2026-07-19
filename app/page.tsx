@@ -34,6 +34,11 @@ export default function SubadminPage() {
     localStorage.removeItem("subadmin_session");
   };
 
+  const handleSessionUpdate = (next: SubadminSession) => {
+    setSession(next);
+    localStorage.setItem("subadmin_session", JSON.stringify(next));
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -46,5 +51,11 @@ export default function SubadminPage() {
     return <SubadminLogin onLogin={handleLogin} />;
   }
 
-  return <SubadminDashboard session={session} onLogout={handleLogout} />;
+  return (
+    <SubadminDashboard
+      session={session}
+      onLogout={handleLogout}
+      onSessionUpdate={handleSessionUpdate}
+    />
+  );
 }

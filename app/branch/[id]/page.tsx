@@ -577,7 +577,7 @@ export default function BranchDetailPage() {
 
       {/* Backup Viewer Dialog */}
       <Dialog open={!!viewingBackup} onOpenChange={(open) => { if (!open) { setViewingBackup(null); setSelectedProdej(null); } }}>
-        <DialogContent className="max-w-[98vw] sm:max-w-[98vw] w-full max-h-[95vh] flex flex-col">
+        <DialogContent className="max-w-[98vw] sm:max-w-[98vw] w-full max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Database className="h-5 w-5" />
@@ -601,9 +601,9 @@ export default function BranchDetailPage() {
           ) : decryptedData ? (
             isUzaverkaBackup ? (
               // Uzaverka Dialog Content
-              <div className="flex-1 overflow-hidden">
+              <div className="space-y-4">
                 {/* Stats Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                   <Card className="bg-secondary/50">
                     <CardContent className="p-3 flex items-center gap-2">
                       <ShoppingCart className="h-6 w-6 text-primary shrink-0" />
@@ -674,7 +674,7 @@ export default function BranchDetailPage() {
                   ]}
                 />
 
-                <Tabs defaultValue="analyza" className="flex-1">
+                <Tabs defaultValue="analyza">
                   <TabsList>
                     <TabsTrigger value="analyza" className="gap-2">
                       <BarChart3 className="h-4 w-4" />
@@ -697,7 +697,7 @@ export default function BranchDetailPage() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <ScrollArea className="h-[280px]">
+                          <div>
                             {(() => {
                               const payload = decryptedData.uzaverky[0]?.payload_json;
                               const perProduct = payload?.perProduct;
@@ -775,7 +775,7 @@ export default function BranchDetailPage() {
                                 </div>
                               );
                             })()}
-                          </ScrollArea>
+                          </div>
                         </CardContent>
                       </Card>
 
@@ -884,8 +884,8 @@ export default function BranchDetailPage() {
                   </TabsContent>
                   
                   <TabsContent value="prodeje" className="mt-4">
-                    <div className="grid grid-cols-5 gap-4 h-[min(520px,calc(95vh-16rem))] min-h-0">
-                      <ScrollArea className="col-span-2 h-full min-h-0 border rounded-lg">
+                    <div className="grid grid-cols-5 gap-4 items-start">
+                      <div className="col-span-2 border rounded-lg">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -914,12 +914,12 @@ export default function BranchDetailPage() {
                             ))}
                           </TableBody>
                         </Table>
-                      </ScrollArea>
+                      </div>
                       
-                      <div className="col-span-3 border rounded-lg p-6 min-h-0 overflow-hidden flex flex-col">
+                      <div className="col-span-3 border rounded-lg p-6">
                         {selectedProdej ? (
-                          <div className="space-y-4 flex-1 min-h-0 flex flex-col">
-                            <div className="flex items-center justify-between shrink-0">
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
                               <h4 className="font-semibold text-lg flex items-center gap-2">
                                 <Package className="h-5 w-5" />
                                 Položky dokladu #{selectedProdej.cislo_dokladu}
@@ -933,30 +933,28 @@ export default function BranchDetailPage() {
                               transaction={selectedProdej}
                               stockMovements={decryptedData.stockMovements}
                             />
-                            <ScrollArea className="flex-1 min-h-0">
-                              {selectedProdejItems.length > 0 ? (
-                                <div className="space-y-3">
-                                  {selectedProdejItems.map((item) => (
-                                    <div key={item.id} className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg">
-                                      <div>
-                                        <p className="font-medium text-base">{item.nazev}</p>
-                                        <p className="text-sm text-muted-foreground">
-                                          {item.mnozstvi}× {formatCurrency(item.cena_jednotka)}
-                                        </p>
-                                      </div>
-                                      <p className="font-semibold text-lg">{formatCurrency(item.cena_celkem)}</p>
+                            {selectedProdejItems.length > 0 ? (
+                              <div className="space-y-3">
+                                {selectedProdejItems.map((item) => (
+                                  <div key={item.id} className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg">
+                                    <div>
+                                      <p className="font-medium text-base">{item.nazev}</p>
+                                      <p className="text-sm text-muted-foreground">
+                                        {item.mnozstvi}× {formatCurrency(item.cena_jednotka)}
+                                      </p>
                                     </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-muted-foreground text-center py-8">
-                                  Žádné položky nenalezeny
-                                </p>
-                              )}
-                            </ScrollArea>
+                                    <p className="font-semibold text-lg">{formatCurrency(item.cena_celkem)}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-muted-foreground text-center py-8">
+                                Žádné položky nenalezeny
+                              </p>
+                            )}
                           </div>
                         ) : (
-                          <div className="flex items-center justify-center h-full text-muted-foreground">
+                          <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
                             <div className="text-center">
                               <Package className="h-12 w-12 mx-auto mb-2 opacity-30" />
                               <p>Klikněte na prodej pro zobrazení položek</p>

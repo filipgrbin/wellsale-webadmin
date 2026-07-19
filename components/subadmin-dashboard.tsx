@@ -33,20 +33,45 @@ import {
 interface SubadminDashboardProps {
   session: SubadminSession;
   onLogout: () => void;
+  onSessionUpdate: (session: SubadminSession) => void;
 }
 
-export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps) {
+function sanitizeLoginCode(value: string): string {
+  return value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 64);
+}
+
+export function SubadminDashboard({
+  session,
+  onLogout,
+  onSessionUpdate,
+}: SubadminDashboardProps) {
   const [activeTab, setActiveTab] = useState("overview");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
   const [newCode, setNewCode] = useState("");
   const [savingCode, setSavingCode] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
 
+  const openChangeCodeDialog = () => {
+    setNewCode(session.loginCode || "");
+    setCodeError(null);
+    // Close dropdown first, then open dialog after Radix releases pointer-events.
+    setMenuOpen(false);
+    window.setTimeout(() => setCodeOpen(true), 50);
+  };
+
   const handleSaveCode = async () => {
+    const code = sanitizeLoginCode(newCode);
+    if (!code) {
+      setCodeError("Zadejte platný přihlašovací kód");
+      return;
+    }
+
     setSavingCode(true);
     setCodeError(null);
     try {
-      await updateLicense(session.licenseKey, { login_code: newCode.trim() });
+      await updateLicense(session.licenseKey, { login_code: code });
+      onSessionUpdate({ ...session, loginCode: code });
       setCodeOpen(false);
     } catch (e) {
       setCodeError(e instanceof Error ? e.message : "Chyba při ukládání kódu");
@@ -69,8 +94,8 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
                 <p className="text-xs text-muted-foreground">Správa poboček</p>
               </div>
             </div>
-            
-            <DropdownMenu>
+
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="gap-2">
                   <User className="h-4 w-4" />
@@ -90,10 +115,9 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => {
-                    setNewCode(session.loginCode || "");
-                    setCodeError(null);
-                    setCodeOpen(true);
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    openChangeCodeDialog();
                   }}
                 >
                   <KeyRound className="mr-2 h-4 w-4" />
@@ -140,7 +164,6 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
             </div>
             <SubadminStats licenseKey={session.licenseKey} />
 
-            {/* Souhrn všech nahlášených problémů napříč pobočkami */}
             <BranchFaults
               licenseKey={session.licenseKey}
               title="Nahlášené problémy (všechny pobočky)"
@@ -186,20 +209,25 @@ export function SubadminDashboard({ session, onLogout }: SubadminDashboardProps)
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2 py-4">
-            <Label>Nový kód</Label>
+            <Label htmlFor="new-login-code">Nový kód</Label>
             <Input
+              id="new-login-code"
               value={newCode}
-              onChange={(e) => setNewCode(e.target.value)}
+              onChange={(e) => setNewCode(sanitizeLoginCode(e.target.value))}
               className="font-mono"
               autoComplete="off"
+              maxLength={64}
             />
             {codeError && <p className="text-sm text-destructive">{codeError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCodeOpen(false)}>
+            <Button variant="outline" onClick={() => setCodeOpen(false)} disabled={savingCode}>
               Zrušit
             </Button>
-            <Button onClick={handleSaveCode} disabled={savingCode || !newCode.trim()}>
+            <Button
+              onClick={handleSaveCode}
+              disabled={savingCode || !sanitizeLoginCode(newCode)}
+            >
               {savingCode ? "Ukládám..." : "Uložit"}
             </Button>
           </DialogFooter>
