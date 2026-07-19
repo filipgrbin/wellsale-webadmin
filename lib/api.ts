@@ -647,10 +647,7 @@ export async function createRelease(data: {
 
 export async function updateRelease(data: {
   id?: number;
-  /** Current version (lookup) or new version when renaming with `id` set */
   version?: string;
-  /** Explicit rename — sent when version string changes */
-  new_version?: string;
   channel?: ReleaseChannel;
   rollout_percent?: number;
   forced?: boolean;
