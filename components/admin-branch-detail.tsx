@@ -277,7 +277,7 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
                   </TableRow>
                 ) : (
                   backups.map((b) => {
-                    const ver = resolveBackupAppVersion(b, new Map([[branch.id, branch]]));
+                    const ver = resolveBackupAppVersion(b);
                     return (
                     <TableRow key={b.id}>
                       <TableCell className="max-w-[240px] truncate font-mono text-xs" title={b.file_name}>
@@ -287,7 +287,7 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
                         <Badge variant="outline">{b.kind}</Badge>
                       </TableCell>
                       <TableCell>
-                        <BranchAppVersion version={ver.app_version} seenAt={ver.app_version_seen_at} />
+                        <BranchAppVersion version={ver.app_version} inline />
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {resolveCashierName(b.metadata_json) ?? "—"}

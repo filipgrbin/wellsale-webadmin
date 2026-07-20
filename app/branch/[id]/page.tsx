@@ -422,7 +422,7 @@ export default function BranchDetailPage() {
                       const meta = (backup.metadata_json || {}) as Record<string, unknown>;
                       const rz = Number(meta.real_zisk);
                       const cashier = resolveCashierName(meta);
-                      const ver = resolveBackupAppVersion(backup, new Map([[branch.id, branch]]));
+                      const ver = resolveBackupAppVersion(backup);
                       return (
                         <TableRow key={backup.id}>
                           <TableCell className="font-medium">
@@ -432,7 +432,7 @@ export default function BranchDetailPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <BranchAppVersion version={ver.app_version} seenAt={ver.app_version_seen_at} />
+                            <BranchAppVersion version={ver.app_version} inline />
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
                             {cashier ?? "—"}

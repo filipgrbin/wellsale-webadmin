@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 import {
   getBackups,
@@ -26,7 +26,7 @@ import {
 import { BranchAppVersion } from "@/components/branch-app-version";
 import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
 import { TransactionStockMovementPanel } from "@/components/transaction-stock-movement-panel";
-import { buildBranchVersionMap, resolveBackupAppVersion } from "@/lib/branch-app-version";
+import { resolveBackupAppVersion } from "@/lib/branch-app-version";
 import { resolveCashierName } from "@/lib/uzaverka-meta";
 import {
   Table,
@@ -189,7 +189,6 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / limit);
   const branches = branchesData?.branches || [];
-  const branchVersionMap = useMemo(() => buildBranchVersionMap(branches), [branches]);
 
   const filtered = backups.filter(
     (b) =>
@@ -391,7 +390,7 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                   </TableHeader>
                   <TableBody>
                     {filtered.map((backup) => {
-                      const ver = resolveBackupAppVersion(backup, branchVersionMap);
+                      const ver = resolveBackupAppVersion(backup);
                       return (
                       <TableRow key={backup.id} className="border-border">
                         <TableCell>
@@ -421,7 +420,7 @@ export function SubadminBackups({ licenseKey }: SubadminBackupsProps) {
                           <Badge variant="secondary">{backup.kind}</Badge>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
-                          <BranchAppVersion version={ver.app_version} seenAt={ver.app_version_seen_at} />
+                          <BranchAppVersion version={ver.app_version} inline />
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-emerald-500">
                           {(() => {
