@@ -88,6 +88,44 @@ function transactionsOrderClause(columns: string[]): string {
   return "rowid ASC";
 }
 
+function firstNonEmptyString(...values: unknown[]): string {
+  for (const v of values) {
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (s && s.toLowerCase() !== "unknown" && s.toLowerCase() !== "null") return s;
+  }
+  return "";
+}
+
+/** Build id → name map from products / zbozi tables for transaction_items.product_id lookup. */
+function loadProductNameById(db: InstanceType<typeof import("better-sqlite3")>): Map<number, string> {
+  const map = new Map<number, string>();
+  const tableCandidates = ["products", "product", "zbozi", "items"];
+  for (const table of tableCandidates) {
+    try {
+      const rows = db.prepare(`SELECT * FROM "${table}" LIMIT 5000`).all() as Record<string, unknown>[];
+      if (!rows.length) continue;
+      for (const row of rows) {
+        const id = Number(row.id ?? row.product_id ?? row.ID);
+        if (!Number.isFinite(id)) continue;
+        const name = firstNonEmptyString(
+          row.name,
+          row.nazev,
+          row.title,
+          row.product_name,
+          row.label,
+          row.code
+        );
+        if (name) map.set(id, name);
+      }
+      if (map.size > 0) break;
+    } catch {
+      // table missing / unreadable
+    }
+  }
+  return map;
+}
+
 export async function parseSqliteBackupBuffer(sqliteBuffer: Buffer): Promise<ParsedBackupData> {
   const magic = sqliteBuffer.slice(0, 16).toString("utf8");
   if (!magic.startsWith("SQLite format 3")) {
@@ -179,17 +217,31 @@ export async function parseSqliteBackupBuffer(sqliteBuffer: Buffer): Promise<Par
 
     if (result.tables.some((t) => t.toLowerCase() === "transaction_items")) {
       try {
+        const productNames = loadProductNameById(db);
         const itemsRows = db
-          .prepare("SELECT * FROM transaction_items ORDER BY rowid DESC LIMIT 2000")
+          .prepare("SELECT * FROM transaction_items ORDER BY rowid DESC LIMIT 5000")
           .all() as Record<string, unknown>[];
         result.polozky = itemsRows.map((obj, index) => {
           const qty = Number(obj.qty || obj.quantity || 1);
           const unitPrice = Number(obj.price_snapshot || obj.unit_price || obj.price || 0);
+          const productId = Number(obj.product_id ?? obj.productId ?? NaN);
+          const fromCatalog =
+            Number.isFinite(productId) && productId > 0
+              ? productNames.get(productId)
+              : undefined;
+          const nazev =
+            firstNonEmptyString(
+              obj.name_snapshot,
+              obj.product_name,
+              obj.name,
+              fromCatalog,
+              Number.isFinite(productId) && productId > 0 ? `Produkt #${productId}` : ""
+            ) || "Neznámý produkt";
 
           return {
             id: Number(obj.id || index + 1),
             prodej_id: Number(obj.transaction_id || 0),
-            nazev: String(obj.name_snapshot || obj.product_name || obj.name || "Unknown"),
+            nazev,
             mnozstvi: qty,
             cena_jednotka: unitPrice,
             cena_celkem: qty * unitPrice,

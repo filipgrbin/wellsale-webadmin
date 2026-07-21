@@ -226,7 +226,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
 
   const needsInsightHours = dayCount >= 1 && dayCount <= HOURLY_INSIGHTS_MAX_DAYS;
 
-  const { data: insightHourlySales, isLoading: insightHourlyLoading, error: hourlyError } = useSWR(
+  const { data: insightIntraday, isLoading: insightHourlyLoading, error: hourlyError } = useSWR(
     needsInsightHours && backupsData
       ? [
           "turnover-insight-hours",
@@ -244,10 +244,16 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
     { revalidateOnFocus: false }
   );
 
+  const insightHourlySales = insightIntraday?.sales;
   // Keep chart-compatible alias for single-day hour view
   const hourlySales = needsHourlySales ? insightHourlySales : undefined;
 
   const periodProducts = useMemo(() => {
+    const fromDecrypt = insightIntraday?.products;
+    if (fromDecrypt && Object.keys(fromDecrypt).length > 0) {
+      return mergeProductCounts(fromDecrypt);
+    }
+    // Fallback: metadata perProduct if POS included it
     const backups = backupsData?.backups ?? [];
     const maps: Array<Record<string, number> | null> = [];
     const branchFilter =
@@ -261,7 +267,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
       maps.push(perProductFromMetadata(b.metadata_json));
     }
     return mergeProductCounts(...maps);
-  }, [backupsData, effectiveLicense, activeBranchIds, from, to]);
+  }, [insightIntraday, backupsData, effectiveLicense, activeBranchIds, from, to]);
 
   const insightHoursLoading = needsInsightHours && insightHourlyLoading;
 
@@ -664,8 +670,8 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
         productLimit={30}
         description={
           dayCount > HOURLY_INSIGHTS_MAX_DAYS
-            ? `Nejlepší/nejtišší den z období ${from === to ? from : `${from} – ${to}`}. Hodiny jen do ${HOURLY_INSIGHTS_MAX_DAYS} dní.`
-            : `Metriky z období ${from === to ? from : `${from} – ${to}`}`
+            ? `Nejlepší/nejtišší den z období ${from === to ? from : `${from} – ${to}`}. Produkty a hodiny jen do ${HOURLY_INSIGHTS_MAX_DAYS} dní (dešifrování uzávěrek).`
+            : `Metriky z období ${from === to ? from : `${from} – ${to}`} · produkty z transakcí v uzávěrkách`
         }
       />
     </div>

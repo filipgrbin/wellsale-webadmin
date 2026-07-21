@@ -11,6 +11,12 @@ const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "SUPER_SECRET_ADMIN_NKEY"
 /** Max days to decrypt for hourly insights (keeps load bounded). */
 export const HOURLY_INSIGHTS_MAX_DAYS = 14;
 
+export interface IntradayFetchResult {
+  sales: HourlySalePoint[];
+  /** Product name → quantity sold, from transaction_items (+ products lookup). */
+  products: Record<string, number>;
+}
+
 function isDecryptableBackup(fileName: string): boolean {
   return fileName.endsWith(".wsbak") || fileName.endsWith(".db");
 }
@@ -34,7 +40,7 @@ async function postIntraday(
   backupIds: number[],
   from: string,
   to: string
-): Promise<HourlySalePoint[]> {
+): Promise<IntradayFetchResult> {
   const response = await fetch("/api/admin/backups/intraday", {
     method: "POST",
     headers: {
@@ -59,7 +65,13 @@ async function postIntraday(
     throw new Error(result.error || "Intraday fetch failed");
   }
 
-  return (result.sales ?? []) as HourlySalePoint[];
+  return {
+    sales: (result.sales ?? []) as HourlySalePoint[],
+    products:
+      result.products && typeof result.products === "object" && !Array.isArray(result.products)
+        ? (result.products as Record<string, number>)
+        : {},
+  };
 }
 
 /** Load sale timestamps from uzaverka .wsbak for intraday chart (single day). */
@@ -68,22 +80,23 @@ export async function fetchHourlySalesForChart(
   day: string,
   opts?: { licenseKey?: string; branchIds?: number[] | null }
 ): Promise<HourlySalePoint[]> {
-  return fetchHourlySalesForRange(backups, day, day, opts);
+  const { sales } = await fetchHourlySalesForRange(backups, day, day, opts);
+  return sales;
 }
 
-/** Load sale timestamps for a date range (best/quietest hour insights). */
+/** Load sale timestamps + products for a date range (insights / charts). */
 export async function fetchHourlySalesForRange(
   backups: Backup[],
   from: string,
   to: string,
   opts?: { licenseKey?: string; branchIds?: number[] | null }
-): Promise<HourlySalePoint[]> {
+): Promise<IntradayFetchResult> {
   if (rangeDayCount(from, to) > HOURLY_INSIGHTS_MAX_DAYS) {
-    return [];
+    return { sales: [], products: {} };
   }
 
   const dayBackups = pickBackupsForRange(backups, from, to, opts);
-  if (dayBackups.length === 0) return [];
+  if (dayBackups.length === 0) return { sales: [], products: {} };
 
   return postIntraday(
     dayBackups.map((b) => b.id),

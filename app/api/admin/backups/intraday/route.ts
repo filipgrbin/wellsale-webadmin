@@ -15,7 +15,16 @@ export interface IntradaySalePoint {
   payKind: "cash" | "qr" | "other";
 }
 
-/** Batch-decrypt uzaverka backups and return transaction timestamps for intraday chart / insights. */
+function saleInRange(datum: string, from: string, to: string): boolean {
+  if (from === to) {
+    return posStampOnDay(datum, from) || normalizeCloseDate(datum) === from;
+  }
+  if (posStampInDayRange(datum, from, to)) return true;
+  const d = normalizeCloseDate(datum);
+  return d != null && d >= from && d <= to;
+}
+
+/** Batch-decrypt uzaverka backups and return transaction timestamps + product qty for charts / insights. */
 export async function POST(request: NextRequest) {
   const adminKey = request.headers.get("x-admin-key") || ADMIN_KEY;
   if (!adminKey) {
@@ -43,6 +52,7 @@ export async function POST(request: NextRequest) {
   }
 
   const sales: IntradaySalePoint[] = [];
+  const productCounts: Record<string, number> = {};
   const errors: Array<{ id: number; error: string }> = [];
 
   await Promise.all(
@@ -51,21 +61,22 @@ export async function POST(request: NextRequest) {
         const { backup, data } = await fetchAndDecryptBackupById(id, adminKey, API_BASE);
         for (const prodej of data.prodeje) {
           if (!prodej.datum?.trim()) continue;
-          const inRange =
-            from === to
-              ? posStampOnDay(prodej.datum, from) || normalizeCloseDate(prodej.datum) === from
-              : posStampInDayRange(prodej.datum, from, to) ||
-                (() => {
-                  const d = normalizeCloseDate(prodej.datum);
-                  return d != null && d >= from && d <= to;
-                })();
-          if (!inRange) continue;
+          if (!saleInRange(prodej.datum, from, to)) continue;
           sales.push({
             branchId: backup.branch_id,
             timestamp: prodej.datum,
             revenue: Number(prodej.celkem) || 0,
             payKind: classifyPaymentKind(prodej.platba_typ),
           });
+        }
+
+        // Uzaverka backup is day-scoped — all line items belong to that close.
+        // Resolve names via product_id in the parser (name_snapshot / products table).
+        for (const item of data.polozky) {
+          const name = String(item.nazev || "").trim();
+          const qty = Number(item.mnozstvi) || 0;
+          if (!name || !Number.isFinite(qty) || qty === 0) continue;
+          productCounts[name] = (productCounts[name] || 0) + qty;
         }
       } catch (e) {
         errors.push({
@@ -82,6 +93,7 @@ export async function POST(request: NextRequest) {
     to,
     day: from === to ? from : undefined,
     sales,
+    products: productCounts,
     errors: errors.length ? errors : undefined,
   });
 }
