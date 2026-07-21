@@ -7,9 +7,7 @@ import { getBackups, getLicenses, getBranches, type Branch } from "@/lib/api";
 import {
   type ChartGranularity,
   type RangePreset,
-  branchCashKey,
   branchDataKey,
-  branchQrKey,
   bucketsToRechartsData,
   buildChartBuckets,
   buildHourlyChartBucketsFromSales,
@@ -52,7 +50,6 @@ import { TrendingUp, CalendarDays, CalendarRange, Store, ChevronDown, Banknote, 
 import { cn } from "@/lib/utils";
 
 const EMERALD_DARK = "#059669";
-const EMERALD_LIGHT = "#6ee7b7";
 
 interface TurnoverChartsProps {
   licenseKey?: string;
@@ -65,7 +62,7 @@ function StackedBranchTooltip({
   labels,
 }: {
   active?: boolean;
-  payload?: Array<{ dataKey?: string; value?: number; color?: string }>;
+  payload?: Array<{ dataKey?: string; value?: number; color?: string; payload?: Record<string, number> }>;
   label?: string;
   labels: Record<string, string>;
 }) {
@@ -73,12 +70,9 @@ function StackedBranchTooltip({
   const items = payload.filter((p) => Number(p.value) > 0);
   if (!items.length) return null;
   const total = items.reduce((s, p) => s + Number(p.value ?? 0), 0);
-  const cash = items
-    .filter((p) => String(p.dataKey || "").endsWith("_cash") || p.dataKey === "cash")
-    .reduce((s, p) => s + Number(p.value ?? 0), 0);
-  const qr = items
-    .filter((p) => String(p.dataKey || "").endsWith("_qr") || p.dataKey === "qr")
-    .reduce((s, p) => s + Number(p.value ?? 0), 0);
+  const row = payload[0]?.payload;
+  const cash = Number(row?.cash ?? 0);
+  const qr = Number(row?.qr ?? 0);
   return (
     <div className="border-border/50 bg-background min-w-[10rem] rounded-lg border px-3 py-2 text-xs shadow-xl">
       <p className="font-medium mb-1.5">{label}</p>
@@ -613,43 +607,19 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
                         }
                       />
                       {chartOutput.stacked ? (
-                        chartOutput.branchIds.flatMap((id) => [
+                        chartOutput.branchIds.map((id) => (
                           <Bar
-                            key={branchCashKey(id)}
-                            dataKey={branchCashKey(id)}
+                            key={branchDataKey(id)}
+                            dataKey={branchDataKey(id)}
                             stackId="branches"
-                            fill={chartOutput.colors[branchCashKey(id)]}
+                            fill={chartOutput.colors[branchDataKey(id)]}
                             radius={0}
-                          />,
-                          <Bar
-                            key={branchQrKey(id)}
-                            dataKey={branchQrKey(id)}
-                            stackId="branches"
-                            fill={chartOutput.colors[branchQrKey(id)]}
-                            radius={0}
-                          />,
-                        ])
-                      ) : chartOutput.paymentSplit ? (
-                        <>
-                          <Bar
-                            dataKey="cash"
-                            stackId="pay"
-                            fill={EMERALD_DARK}
-                            radius={[0, 0, 0, 0]}
-                            name="Hotovost"
                           />
-                          <Bar
-                            dataKey="qr"
-                            stackId="pay"
-                            fill={EMERALD_LIGHT}
-                            radius={[4, 4, 0, 0]}
-                            name="QR"
-                          />
-                        </>
+                        ))
                       ) : (
                         <Bar
                           dataKey="revenue"
-                          fill={EMERALD_DARK}
+                          fill={chartOutput.colors.revenue ?? EMERALD_DARK}
                           radius={[4, 4, 0, 0]}
                         />
                       )}
@@ -667,30 +637,13 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
                             className="h-2.5 w-2.5 rounded-sm"
                             style={{ backgroundColor: chartOutput.colors[key] }}
                           />
-                          <span
-                            className="h-2.5 w-2.5 rounded-sm opacity-70"
-                            style={{ backgroundColor: chartOutput.colors[branchQrKey(id)] }}
-                          />
                           <span className="font-medium">{chartOutput.labels[key]}</span>
                           <span className="text-muted-foreground truncate max-w-[120px]">
                             {branchMeta.get(id)?.name}
                           </span>
-                          <span className="text-muted-foreground">· tmavší hotovost, světlejší QR</span>
                         </div>
                       );
                     })}
-                  </div>
-                )}
-                {!chartOutput.stacked && chartOutput.paymentSplit && (
-                  <div className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: EMERALD_DARK }} />
-                      Hotovost
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: EMERALD_LIGHT }} />
-                      QR
-                    </span>
                   </div>
                 )}
               </TabsContent>
@@ -711,7 +664,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
         productLimit={30}
         description={
           dayCount > HOURLY_INSIGHTS_MAX_DAYS
-            ? `Nejlepší/nejtichší den z období ${from === to ? from : `${from} – ${to}`}. Hodiny jen do ${HOURLY_INSIGHTS_MAX_DAYS} dní.`
+            ? `Nejlepší/nejtišší den z období ${from === to ? from : `${from} – ${to}`}. Hodiny jen do ${HOURLY_INSIGHTS_MAX_DAYS} dní.`
             : `Metriky z období ${from === to ? from : `${from} – ${to}`}`
         }
       />

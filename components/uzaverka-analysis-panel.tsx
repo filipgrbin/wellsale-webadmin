@@ -112,7 +112,7 @@ export function UzaverkaAnalysisPanel({
                     </div>
                     {insights.avgTicket != null && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Průměrný doklad:</span>
+                        <span className="text-muted-foreground">Průměrný prodej:</span>
                         <span className="font-medium">{formatCurrency(insights.avgTicket)}</span>
                       </div>
                     )}

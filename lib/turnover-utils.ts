@@ -411,8 +411,11 @@ export function sumRecords(records: ClosureRecord[]): {
   const branches = new Set<number>();
   for (const r of records) {
     revenue += r.revenue;
-    cash += r.cash;
-    qr += r.qr;
+    let c = r.cash;
+    let q = r.qr;
+    if (c + q === 0 && r.revenue > 0) c = r.revenue;
+    cash += c;
+    qr += q;
     tx += r.txCount;
     branches.add(r.branchId);
     if (r.profit != null) {
@@ -496,32 +499,10 @@ export function branchDataKey(branchId: number): string {
   return `b_${branchId}`;
 }
 
-export function branchCashKey(branchId: number): string {
-  return `b_${branchId}_cash`;
-}
-
-export function branchQrKey(branchId: number): string {
-  return `b_${branchId}_qr`;
-}
-
-/** Same hue, lighter shade for QR portion within a branch/stack. */
-export function lightenHex(hex: string, amount = 0.45): string {
-  const raw = hex.replace("#", "");
-  if (raw.length !== 6) return hex;
-  const num = Number.parseInt(raw, 16);
-  const r = (num >> 16) & 255;
-  const g = (num >> 8) & 255;
-  const b = num & 255;
-  const mix = (c: number) => Math.round(c + (255 - c) * amount);
-  return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-}
-
 export interface RechartsChartOutput {
   rows: Record<string, string | number>[];
   branchIds: number[];
   stacked: boolean;
-  /** When true, each column splits cash/QR in the same color family. */
-  paymentSplit: boolean;
   colors: Record<string, string>;
   labels: Record<string, string>;
 }
@@ -536,8 +517,8 @@ export function bucketsToRechartsData(
     for (const id of b.byBranch.keys()) branchIdSet.add(id);
   }
   const branchIds = [...branchIdSet].sort((a, c) => a - c);
+  // Color distinction is only between stores — never cash vs QR.
   const multiBranch = stacked && branchIds.length > 1;
-  const hasPaymentSplit = buckets.some((b) => b.cash > 0 || b.qr > 0);
 
   const colors: Record<string, string> = {};
   const labels: Record<string, string> = {};
@@ -547,23 +528,19 @@ export function bucketsToRechartsData(
       const base = BRANCH_PALETTE[i % BRANCH_PALETTE.length];
       const info = branchMeta.get(id);
       const code = info?.code || `#${id}`;
-      const cashKey = branchCashKey(id);
-      const qrKey = branchQrKey(id);
-      labels[cashKey] = `${code} hotovost`;
-      labels[qrKey] = `${code} QR`;
-      colors[cashKey] = base;
-      colors[qrKey] = lightenHex(base, 0.42);
-      // keep base key for legend
       labels[branchDataKey(id)] = code;
       colors[branchDataKey(id)] = base;
     });
   } else {
-    labels.cash = "Hotovost";
-    labels.qr = "QR";
-    colors.cash = EMERALD_DARK;
-    colors.qr = lightenHex(EMERALD_DARK, 0.42);
     colors.revenue = EMERALD_DARK;
     labels.revenue = "Tržby";
+    // Single store still gets its palette color when known
+    if (branchIds.length === 1) {
+      const id = branchIds[0];
+      const info = branchMeta.get(id);
+      colors.revenue = BRANCH_PALETTE[0];
+      labels.revenue = info?.code || "Tržby";
+    }
   }
 
   const rows = buckets.map((bucket) => {
@@ -573,21 +550,12 @@ export function bucketsToRechartsData(
       total: bucket.total,
       cash: bucket.cash,
       qr: bucket.qr,
+      revenue: bucket.total,
     };
     if (multiBranch) {
       for (const id of branchIds) {
-        row[branchCashKey(id)] = bucket.byBranchCash.get(id) ?? 0;
-        row[branchQrKey(id)] = bucket.byBranchQr.get(id) ?? 0;
         row[branchDataKey(id)] = bucket.byBranch.get(id) ?? 0;
       }
-    } else if (hasPaymentSplit) {
-      row.cash = bucket.cash;
-      row.qr = bucket.qr;
-      // remainder (unknown payment) keeps total correct in tooltip
-      row.other = Math.max(0, bucket.total - bucket.cash - bucket.qr);
-      row.revenue = bucket.total;
-    } else {
-      row.revenue = bucket.total;
     }
     return row;
   });
@@ -596,7 +564,6 @@ export function bucketsToRechartsData(
     rows,
     branchIds,
     stacked: multiBranch,
-    paymentSplit: hasPaymentSplit,
     colors,
     labels,
   };

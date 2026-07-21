@@ -131,7 +131,7 @@ export function TurnoverInsightsPanel({
   hideDays = false,
   showProducts = true,
   productLimit,
-  title = "Zajímavé metriky",
+  title = "Metriky",
   description,
   hourlyLoading = false,
 }: TurnoverInsightsPanelProps) {
@@ -156,7 +156,7 @@ export function TurnoverInsightsPanel({
               txCount={insights.bestDay?.txCount}
             />
             <MetricCard
-              title="Nejtichší den"
+              title="Nejtišší den"
               icon={<Moon className="h-3.5 w-3.5 text-sky-600" />}
               label={insights.quietestDay?.label ?? null}
               revenue={insights.quietestDay?.revenue}
@@ -177,7 +177,7 @@ export function TurnoverInsightsPanel({
           empty="Chybí časy prodejů z uzávěrek"
         />
         <MetricCard
-          title="Nejtichší hodina"
+          title="Nejtišší hodina"
           icon={<TrendingDown className="h-3.5 w-3.5 text-sky-600" />}
           label={
             hourlyLoading
@@ -188,14 +188,6 @@ export function TurnoverInsightsPanel({
           txCount={hourlyLoading ? undefined : insights.quietestHour?.txCount}
           empty="Chybí časy prodejů z uzávěrek"
         />
-        <MetricCard
-          title="Průměrný doklad"
-          icon={<Receipt className="h-3.5 w-3.5" />}
-          label={
-            insights.avgTicket != null ? formatCurrency(insights.avgTicket) : null
-          }
-          empty="—"
-        />
         {!hideDays && (
           <MetricCard
             title="Aktivní dny"
@@ -203,6 +195,14 @@ export function TurnoverInsightsPanel({
             label={String(insights.activeDays)}
           />
         )}
+        <MetricCard
+          title="Průměrný prodej"
+          icon={<Receipt className="h-3.5 w-3.5" />}
+          label={
+            insights.avgTicket != null ? formatCurrency(insights.avgTicket) : null
+          }
+          empty="—"
+        />
         {hideDays && (
           <MetricCard
             title="Transakce"
