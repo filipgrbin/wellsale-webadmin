@@ -52,7 +52,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const PREVIEW_COUNT = 5;
-const POLL_MS = 7000;
+const POLL_MS = 60_000;
 
 interface PosLiveTransactionsProps {
   /** Subadmin: locked license. Mainadmin: optional; must select if omitted. */
