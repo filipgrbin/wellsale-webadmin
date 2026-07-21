@@ -6,12 +6,11 @@ const API_BASE =
 const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "SUPER_SECRET_ADMIN_NKEY";
 
 /**
- * Same-origin proxy: get S3 presigned URL server-side, fetch the object,
- * stream bytes to the browser (avoids S3 CORS on webadmin origin).
+ * Never buffer the backup through Next (large files → 413 on the edge).
+ * Resolve a presigned S3 URL and 302-redirect the browser there.
  */
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const id = searchParams.get("id");
+  const id = request.nextUrl.searchParams.get("id");
   const adminKey = request.headers.get("x-admin-key") || ADMIN_KEY;
 
   if (!id) {
@@ -42,28 +41,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "no_download_url" }, { status: 502 });
     }
 
-    const fileResponse = await fetch(urlData.downloadUrl, { cache: "no-store" });
-    if (!fileResponse.ok) {
-      return NextResponse.json(
-        { error: "s3_download_failed" },
-        { status: fileResponse.status === 403 ? 502 : fileResponse.status }
-      );
-    }
-
-    const data = await fileResponse.arrayBuffer();
-    const filename =
-      String(urlData.file_name || urlData.filename || "").trim() ||
-      `backup-${id}.wsbak`;
-
-    return new NextResponse(data, {
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${filename.replace(/"/g, "")}"`,
-        "Cache-Control": "no-store",
-      },
-    });
+    return NextResponse.redirect(urlData.downloadUrl, 302);
   } catch (error) {
-    console.error("Download error:", error);
+    console.error("Download redirect error:", error);
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
