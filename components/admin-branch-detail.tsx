@@ -365,7 +365,7 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
         </CardContent>
       </Card>
 
-      <BranchFaults licenseKey={branch.license_key} branchId={branch.id} />
+      <BranchFaults licenseKey={branch.license_key} branchId={branch.id} canResolve />
 
       <BackupDownloadDialog
         backup={downloadChoice}

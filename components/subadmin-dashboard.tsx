@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { SubadminBranches } from "@/components/subadmin-branches";
 import { SubadminBackups } from "@/components/subadmin-backups";
 import { SubadminStats } from "@/components/subadmin-stats";
+import { PosLiveStock } from "@/components/pos-live-stock";
 import { BranchFaults } from "@/components/branch-faults";
 import { SubadminSignatureVerifier } from "@/components/subadmin-signature-verifier";
-import { Building2, Database, KeyRound, LayoutDashboard, LogOut, User } from "lucide-react";
+import { Building2, Database, KeyRound, LayoutDashboard, LogOut, User, Warehouse } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -149,6 +150,10 @@ export function SubadminDashboard({
               <Database className="h-4 w-4" />
               Zalohy
             </TabsTrigger>
+            <TabsTrigger value="stock" className="gap-2">
+              <Warehouse className="h-4 w-4" />
+              Sklad
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6 m-0">
@@ -192,6 +197,10 @@ export function SubadminDashboard({
               </div>
               <SubadminBackups licenseKey={session.licenseKey} />
             </div>
+          </TabsContent>
+
+          <TabsContent value="stock" className="m-0">
+            <PosLiveStock licenseKey={session.licenseKey} />
           </TabsContent>
         </Tabs>
 

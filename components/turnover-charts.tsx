@@ -24,6 +24,8 @@ import {
   sumTxRevenue,
   toHourlySalePoints,
 } from "@/lib/pos-transactions";
+import { summarizeCapability } from "@/lib/app-capabilities";
+import { AppCapabilityNotice } from "@/components/app-capability-notice";
 import { buildPeriodInsights } from "@/lib/turnover-insights";
 import { TurnoverInsightsPanel } from "@/components/turnover-insights-panel";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -172,6 +174,11 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
     return (branchesData?.branches ?? []).filter((b) => !b.archived_at);
   }, [branchesData]);
 
+  const liveCap = useMemo(
+    () => summarizeCapability(availableBranches, "livePosSync"),
+    [availableBranches]
+  );
+
   const branchMeta = useMemo(() => {
     const m = new Map<number, { id: number; code: string; name: string }>();
     for (const b of availableBranches) {
@@ -317,6 +324,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
 
   return (
     <div className="space-y-4">
+      <AppCapabilityNotice notice={liveCap.notice} />
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -325,8 +333,8 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           </h3>
           <p className="text-sm text-muted-foreground">
             {isSubadmin
-              ? "Live prodeje z pokladen — intradenní, denní a měsíční přehled"
-              : "Live agregace transakcí podle licence a prodejen"}
+              ? "Live transakce z pokladen — intradenní, denní a měsíční přehled (ne z uzávěrek)"
+              : "Live agregace transakcí podle licence a prodejen (ne z uzávěrek)"}
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">

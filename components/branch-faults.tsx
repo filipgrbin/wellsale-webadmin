@@ -52,6 +52,8 @@ interface BranchFaultsProps {
   // Omit to list faults across ALL branches of the license (adds a branch column).
   branchId?: number;
   title?: string;
+  /** Only mainadmin may resolve / reopen. Subadmin is view-only. Default false. */
+  canResolve?: boolean;
 }
 
 interface ParsedMainLine {
@@ -126,7 +128,12 @@ function isResolved(f: { resolved?: boolean; resolution?: string | null }): bool
   return !!f.resolution;
 }
 
-export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps) {
+export function BranchFaults({
+  licenseKey,
+  branchId,
+  title,
+  canResolve = false,
+}: BranchFaultsProps) {
   const showBranch = branchId == null;
   const { data, isLoading, error, mutate } = useSWR(
     ["branch-faults", licenseKey, branchId ?? "all"],
@@ -163,7 +170,7 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
   };
 
   const handleResolve = async (markResolved: boolean) => {
-    if (!selected) return;
+    if (!canResolve || !selected) return;
     setSaving(true);
     try {
       const note = resolutionNote.trim();
@@ -343,21 +350,32 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
               </div>
 
               <div className="rounded-lg border border-border p-3 space-y-3">
-                <div>
-                  <Label htmlFor="fault-resolution" className="text-xs text-muted-foreground">
-                    Poznámka k řešení
-                  </Label>
-                  <Textarea
-                    id="fault-resolution"
-                    className="mt-1.5"
-                    rows={3}
-                    placeholder="Volitelně: co se udělalo / jak se to vyřešilo"
-                    value={resolutionNote}
-                    onChange={(e) => setResolutionNote(e.target.value)}
-                    disabled={saving}
-                  />
-                </div>
-                {current?.resolution && resolved && (
+                {canResolve ? (
+                  <div>
+                    <Label htmlFor="fault-resolution" className="text-xs text-muted-foreground">
+                      Poznámka k řešení
+                    </Label>
+                    <Textarea
+                      id="fault-resolution"
+                      className="mt-1.5"
+                      rows={3}
+                      placeholder="Volitelně: co se udělalo / jak se to vyřešilo"
+                      value={resolutionNote}
+                      onChange={(e) => setResolutionNote(e.target.value)}
+                      disabled={saving}
+                    />
+                  </div>
+                ) : current?.resolution && resolved ? (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Poznámka k řešení</p>
+                    <p className="whitespace-pre-wrap text-sm">{current.resolution}</p>
+                  </div>
+                ) : !resolved ? (
+                  <p className="text-xs text-muted-foreground">
+                    Vyřešit může jen administrátor WellSale. Až bude problém vyřešený, uvidíte to tady.
+                  </p>
+                ) : null}
+                {canResolve && current?.resolution && resolved && (
                   <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
                     Uloženo řešení: {current.resolution}
@@ -479,26 +497,27 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
                 <Button variant="outline" onClick={() => setSelected(null)} disabled={saving}>
                   Zavřít
                 </Button>
-                {resolved ? (
-                  <Button
-                    variant="secondary"
-                    disabled={saving}
-                    onClick={() => void handleResolve(false)}
-                    className="gap-2"
-                  >
-                    {saving ? <Spinner className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
-                    Znovu otevřít
-                  </Button>
-                ) : (
-                  <Button
-                    disabled={saving}
-                    onClick={() => void handleResolve(true)}
-                    className="gap-2"
-                  >
-                    {saving ? <Spinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                    Označit jako vyřešené
-                  </Button>
-                )}
+                {canResolve &&
+                  (resolved ? (
+                    <Button
+                      variant="secondary"
+                      disabled={saving}
+                      onClick={() => void handleResolve(false)}
+                      className="gap-2"
+                    >
+                      {saving ? <Spinner className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
+                      Znovu otevřít
+                    </Button>
+                  ) : (
+                    <Button
+                      disabled={saving}
+                      onClick={() => void handleResolve(true)}
+                      className="gap-2"
+                    >
+                      {saving ? <Spinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                      Označit jako vyřešené
+                    </Button>
+                  ))}
               </DialogFooter>
             </div>
           )}

@@ -24,6 +24,8 @@ import {
   txKey,
 } from "@/lib/pos-transactions";
 import { pragueDate } from "@/lib/turnover-utils";
+import { summarizeCapability } from "@/lib/app-capabilities";
+import { AppCapabilityNotice } from "@/components/app-capability-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -97,6 +99,11 @@ export function PosLiveTransactions({
   const availableBranches = useMemo(() => {
     return (branchesData?.branches ?? []).filter((b) => !b.archived_at);
   }, [branchesData]);
+
+  const liveCap = useMemo(
+    () => summarizeCapability(availableBranches, "livePosSync"),
+    [availableBranches]
+  );
 
   const activeBranchIds = useMemo((): number[] | null => {
     if (allBranches) return null;
@@ -284,6 +291,9 @@ export function PosLiveTransactions({
             <CardDescription>
               Live prodeje z pokladen · {today}
             </CardDescription>
+            <p className="text-xs text-muted-foreground mt-1">
+              Zdroj: live sync (ne uzávěrka). Uzávěrka = oficiální uzavření dne.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             {!lockLicense && (
@@ -347,6 +357,7 @@ export function PosLiveTransactions({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        <AppCapabilityNotice notice={liveCap.notice} />
         <div className="flex flex-wrap items-end gap-6">
           <div>
             <p className="text-sm text-muted-foreground">Vyděláno dnes</p>
