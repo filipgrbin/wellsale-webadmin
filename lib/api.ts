@@ -857,27 +857,47 @@ function buildPosQueryParams(q: PosTransactionsQuery): Record<string, string> {
   return params;
 }
 
-/** Live POS sales feed for webadmin. Requires branchId or licenseKey. */
+/** Live POS sales feed — via Next.js proxy (avoids CORS on api.wellsale.cz). */
 export async function getPosTransactions(
   query: PosTransactionsQuery
 ): Promise<PosTransactionsResponse> {
   if (query.branchId == null && !query.licenseKey) {
     throw new Error("getPosTransactions requires branchId or licenseKey");
   }
-  return apiRequest<PosTransactionsResponse>("/api/admin/pos/transactions", {
-    params: buildPosQueryParams(query),
+  const params = new URLSearchParams(buildPosQueryParams(query));
+  const response = await fetch(`/api/admin/pos/transactions?${params}`, {
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-key": ADMIN_KEY,
+    },
+    cache: "no-store",
   });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.reason || data.error || data.message || "POS transactions failed");
+  }
+  return data;
 }
 
-/** Live POS stock movements feed. Requires branchId or licenseKey. */
+/** Live POS stock movements — via Next.js proxy (avoids CORS). */
 export async function getPosStockMovements(
   query: PosTransactionsQuery
 ): Promise<PosStockMovementsResponse> {
   if (query.branchId == null && !query.licenseKey) {
     throw new Error("getPosStockMovements requires branchId or licenseKey");
   }
-  return apiRequest<PosStockMovementsResponse>("/api/admin/pos/stock-movements", {
-    params: buildPosQueryParams(query),
+  const params = new URLSearchParams(buildPosQueryParams(query));
+  const response = await fetch(`/api/admin/pos/stock-movements?${params}`, {
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-key": ADMIN_KEY,
+    },
+    cache: "no-store",
   });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.reason || data.error || data.message || "POS stock movements failed");
+  }
+  return data;
 }
 
