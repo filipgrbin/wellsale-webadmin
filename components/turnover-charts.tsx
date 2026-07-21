@@ -3,29 +3,28 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { getBackups, getLicenses, getBranches, type Branch } from "@/lib/api";
+import { getLicenses, getBranches, type Branch, type PosTransaction } from "@/lib/api";
 import {
   type ChartGranularity,
   type RangePreset,
   branchDataKey,
   bucketsToRechartsData,
-  buildChartBuckets,
   buildHourlyChartBucketsFromSales,
   formatCurrency,
-  getEffectiveDateRange,
-  parseClosureRecords,
   pragueDate,
   rangeDayCount,
-  sumRecords,
-  filterRecordsInRange,
-  extractCloseDate,
 } from "@/lib/turnover-utils";
-import { fetchHourlySalesForRange, HOURLY_INSIGHTS_MAX_DAYS } from "@/lib/turnover-hourly";
 import {
-  buildPeriodInsights,
-  mergeProductCounts,
-  perProductFromMetadata,
-} from "@/lib/turnover-insights";
+  buildPosChartBuckets,
+  fetchAllPosTransactions,
+  filterTxByBranches,
+  posTxsToDayRecords,
+  productsFromPosTransactions,
+  rangeToWallClock,
+  sumTxRevenue,
+  toHourlySalePoints,
+} from "@/lib/pos-transactions";
+import { buildPeriodInsights } from "@/lib/turnover-insights";
 import { TurnoverInsightsPanel } from "@/components/turnover-insights-panel";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -135,7 +134,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
   const isSubadmin = Boolean(fixedLicenseKey);
   const today = pragueDate(new Date());
 
-  const [licenseFilter, setLicenseFilter] = useState<string>("all");
+  const [licenseFilter, setLicenseFilter] = useState<string>(fixedLicenseKey || "");
   const [rangePreset, setRangePreset] = useState<RangePreset>("week");
   const [customFrom, setCustomFrom] = useState(today);
   const [customTo, setCustomTo] = useState(today);
@@ -143,10 +142,13 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
   const [allBranches, setAllBranches] = useState(true);
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<number>>(new Set());
 
-  const effectiveLicense =
-    fixedLicenseKey ?? (licenseFilter !== "all" ? licenseFilter : undefined);
+  const effectiveLicense = fixedLicenseKey || (licenseFilter || undefined);
 
-  const { from, to } = getEffectiveDateRange(rangePreset, customFrom, customTo);
+  const { dayFrom: from, dayTo: to, from: wallFrom, to: wallTo } = rangeToWallClock(
+    rangePreset,
+    customFrom,
+    customTo
+  );
   const dayCount = rangeDayCount(from, to);
   const canUseHourly = dayCount <= 1;
 
@@ -160,137 +162,94 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
     }
   }, [rangePreset, canUseHourly]);
 
-  const { data: backupsData, isLoading } = useSWR(
-    ["turnover-charts", effectiveLicense ?? "all"],
-    () =>
-      getBackups({
-        kind: "uzaverka",
-        limit: 500,
-        ...(effectiveLicense ? { licenseKey: effectiveLicense } : {}),
-      })
-  );
-
   const { data: licensesData } = useSWR(isSubadmin ? null : "licenses", getLicenses);
   const { data: branchesData } = useSWR(
-    isSubadmin ? ["turnover-branches", fixedLicenseKey] : "all-branches",
-    () => getBranches(fixedLicenseKey)
+    effectiveLicense ? ["turnover-branches", effectiveLicense] : null,
+    () => getBranches(effectiveLicense)
   );
 
   const availableBranches = useMemo(() => {
-    const list = (branchesData?.branches ?? []).filter((b) => !b.archived_at);
-    if (effectiveLicense) {
-      return list.filter((b) => b.license_key === effectiveLicense);
-    }
-    return list;
-  }, [branchesData, effectiveLicense]);
+    return (branchesData?.branches ?? []).filter((b) => !b.archived_at);
+  }, [branchesData]);
 
   const branchMeta = useMemo(() => {
     const m = new Map<number, { id: number; code: string; name: string }>();
     for (const b of availableBranches) {
       m.set(b.id, { id: b.id, code: b.code, name: b.name });
     }
-    for (const bk of backupsData?.backups ?? []) {
-      if (!m.has(bk.branch_id)) {
-        m.set(bk.branch_id, {
-          id: bk.branch_id,
-          code: bk.branch_code || `#${bk.branch_id}`,
-          name: bk.branch_name || `Pobočka ${bk.branch_id}`,
-        });
-      }
-    }
     return m;
-  }, [availableBranches, backupsData]);
+  }, [availableBranches]);
 
   const activeBranchIds = useMemo((): number[] | null => {
     if (allBranches) return null;
     return [...selectedBranchIds];
   }, [allBranches, selectedBranchIds]);
 
-  const allRecords = useMemo(
-    () =>
-      parseClosureRecords(backupsData?.backups ?? [], {
-        licenseKey: effectiveLicense,
-        branchIds: activeBranchIds,
-      }),
-    [backupsData, effectiveLicense, activeBranchIds]
-  );
+  const posScope = useMemo(() => {
+    if (!effectiveLicense) return null;
+    if (activeBranchIds && activeBranchIds.length === 1) {
+      return { branchId: activeBranchIds[0] as number };
+    }
+    return { licenseKey: effectiveLicense };
+  }, [effectiveLicense, activeBranchIds]);
 
-  const rangeRecords = useMemo(
-    () => filterRecordsInRange(allRecords, from, to),
-    [allRecords, from, to]
-  );
+  const branchKey =
+    activeBranchIds && activeBranchIds.length > 0
+      ? [...activeBranchIds].sort((a, b) => a - b).join(",")
+      : "all";
 
-  const rangeSummary = useMemo(() => sumRecords(rangeRecords), [rangeRecords]);
-
-  const needsHourlySales = granularity === "hour" && canUseHourly;
-
-  const needsInsightHours = dayCount >= 1 && dayCount <= HOURLY_INSIGHTS_MAX_DAYS;
-
-  const { data: insightIntraday, isLoading: insightHourlyLoading, error: hourlyError } = useSWR(
-    needsInsightHours && backupsData
-      ? [
-          "turnover-insight-hours",
-          effectiveLicense ?? "all",
-          from,
-          to,
-          activeBranchIds ? [...activeBranchIds].sort((a, b) => a - b).join(",") : "all",
-        ]
+  const {
+    data: posData,
+    isLoading,
+    error: posError,
+  } = useSWR(
+    posScope && !(!allBranches && selectedBranchIds.size === 0)
+      ? ["turnover-pos", posScope.licenseKey ?? posScope.branchId, wallFrom, wallTo, branchKey]
       : null,
-    () =>
-      fetchHourlySalesForRange(backupsData!.backups, from, to, {
-        licenseKey: effectiveLicense,
-        branchIds: activeBranchIds,
-      }),
+    async () => {
+      const result = await fetchAllPosTransactions(posScope!, wallFrom, wallTo);
+      return result;
+    },
     { revalidateOnFocus: false }
   );
 
-  const insightHourlySales = insightIntraday?.sales;
-  // Keep chart-compatible alias for single-day hour view
-  const hourlySales = needsHourlySales ? insightHourlySales : undefined;
-
-  const periodProducts = useMemo(() => {
-    const fromDecrypt = insightIntraday?.products;
-    if (fromDecrypt && Object.keys(fromDecrypt).length > 0) {
-      return mergeProductCounts(fromDecrypt);
+  const rangeTxs: PosTransaction[] = useMemo(() => {
+    let list = posData?.transactions ?? [];
+    if (activeBranchIds && activeBranchIds.length > 1) {
+      list = filterTxByBranches(list, activeBranchIds);
     }
-    // Fallback: metadata perProduct if POS included it
-    const backups = backupsData?.backups ?? [];
-    const maps: Array<Record<string, number> | null> = [];
-    const branchFilter =
-      activeBranchIds && activeBranchIds.length > 0 ? new Set(activeBranchIds) : null;
-    for (const b of backups) {
-      if (b.kind !== "uzaverka" && b.kind !== "close") continue;
-      if (effectiveLicense && b.license_key !== effectiveLicense) continue;
-      if (branchFilter && !branchFilter.has(b.branch_id)) continue;
-      const closeDate = extractCloseDate(b);
-      if (!closeDate || closeDate < from || closeDate > to) continue;
-      maps.push(perProductFromMetadata(b.metadata_json));
-    }
-    return mergeProductCounts(...maps);
-  }, [insightIntraday, backupsData, effectiveLicense, activeBranchIds, from, to]);
+    return list;
+  }, [posData, activeBranchIds]);
 
-  const insightHoursLoading = needsInsightHours && insightHourlyLoading;
+  const rangeSummary = useMemo(() => sumTxRevenue(rangeTxs), [rangeTxs]);
+
+  const hourlySales = useMemo(() => toHourlySalePoints(rangeTxs), [rangeTxs]);
+
+  const periodProducts = useMemo(
+    () => productsFromPosTransactions(rangeTxs),
+    [rangeTxs]
+  );
+
+  const dayRecords = useMemo(() => posTxsToDayRecords(rangeTxs), [rangeTxs]);
 
   const periodInsights = useMemo(
     () =>
       buildPeriodInsights({
-        records: rangeRecords,
-        hourlySales: insightHourlySales,
+        records: dayRecords,
+        hourlySales,
         products: periodProducts,
       }),
-    [rangeRecords, insightHourlySales, periodProducts]
+    [dayRecords, hourlySales, periodProducts]
   );
 
   const buckets = useMemo(() => {
     if (granularity === "hour") {
-      return buildHourlyChartBucketsFromSales(hourlySales ?? [], from, to);
+      return buildHourlyChartBucketsFromSales(hourlySales, from, to);
     }
-    return buildChartBuckets(allRecords, granularity, from, to);
-  }, [allRecords, granularity, from, to, hourlySales]);
+    return buildPosChartBuckets(rangeTxs, granularity, from, to);
+  }, [rangeTxs, granularity, from, to, hourlySales]);
 
-  const chartLoading = isLoading || (needsHourlySales && insightHourlyLoading);
-  const hourlyReady = !needsHourlySales || (insightHourlySales !== undefined && !insightHourlyLoading);
-
+  const chartLoading = Boolean(posScope) && isLoading;
   const stacked = allBranches;
 
   const chartOutput = useMemo(
@@ -318,7 +277,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
   const branchPickerLabel = allBranches
     ? "Všechny prodejny"
     : selectedBranchIds.size === 0
-      ? "Všechny prodejny"
+      ? "Vyberte prodejny"
       : `${selectedBranchIds.size} prodejen`;
 
   const presetLabel: Record<RangePreset, string> = {
@@ -328,28 +287,55 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
     custom: "Vlastní rozsah",
   };
 
+  if (!isSubadmin && !effectiveLicense) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Analýza tržeb
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Vyberte licenci — live data z pokladen vyžadují licenseKey
+          </p>
+        </div>
+        <Select value={licenseFilter || undefined} onValueChange={setLicenseFilter}>
+          <SelectTrigger className="w-full sm:w-[280px]">
+            <SelectValue placeholder="Licence…" />
+          </SelectTrigger>
+          <SelectContent>
+            {(licensesData?.licenses ?? []).map((l) => (
+              <SelectItem key={l.license_key} value={l.license_key}>
+                {l.owner_name} ({l.license_key})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            Analýza tržeb z uzávěrek
+            Analýza tržeb
           </h3>
           <p className="text-sm text-muted-foreground">
             {isSubadmin
-              ? "Intradenní, denní a měsíční přehled s výběrem prodejen"
-              : "Agregace z uzávěrek napříč pobočkami a licencemi"}
+              ? "Live prodeje z pokladen — intradenní, denní a měsíční přehled"
+              : "Live agregace transakcí podle licence a prodejen"}
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {!isSubadmin && (
-            <Select value={licenseFilter} onValueChange={setLicenseFilter}>
+            <Select value={licenseFilter || effectiveLicense} onValueChange={setLicenseFilter}>
               <SelectTrigger className="w-full sm:w-[220px]">
                 <SelectValue placeholder="Licence" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Všechny licence</SelectItem>
                 {(licensesData?.licenses ?? []).map((l) => (
                   <SelectItem key={l.license_key} value={l.license_key}>
                     {l.owner_name}
@@ -404,7 +390,6 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
         </div>
       </div>
 
-      {/* Range presets */}
       <div className="flex flex-wrap gap-2">
         {(["today", "week", "month", "custom"] as RangePreset[]).map((p) => (
           <Button
@@ -450,7 +435,6 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
         </div>
       )}
 
-      {/* Summary for selected range */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
@@ -460,8 +444,13 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(rangeSummary.revenue)}</div>
-            <p className="text-xs text-emerald-500 mt-1">
-              zisk {rangeSummary.profitKnown ? formatCurrency(rangeSummary.profit) : "—"}
+            <p className="text-xs text-muted-foreground mt-1">
+              {rangeSummary.txCount}{" "}
+              {rangeSummary.txCount === 1
+                ? "transakce"
+                : rangeSummary.txCount >= 2 && rangeSummary.txCount <= 4
+                  ? "transakce"
+                  : "transakcí"}
             </p>
           </CardContent>
         </Card>
@@ -507,7 +496,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           <CardContent>
             <div className="text-2xl font-bold">{rangeSummary.branches.size}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {rangeSummary.tx} transakcí celkem
+              {rangeSummary.txCount} transakcí celkem
             </p>
           </CardContent>
         </Card>
@@ -524,6 +513,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {dayCount} {dayCount === 1 ? "den" : dayCount < 5 ? "dny" : "dní"}
+              {posData?.truncated ? " · zkráceno limitem API" : ""}
             </p>
           </CardContent>
         </Card>
@@ -537,14 +527,12 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           </CardTitle>
           <CardDescription>
             {chartLoading
-              ? granularity === "hour"
-                ? "Načítání transakcí z uzávěrek…"
-                : "Načítání dat…"
+              ? "Načítání transakcí z pokladen…"
               : granularity === "hour"
-                ? "Tržby podle času jednotlivých prodejů z .wsbak"
+                ? "Tržby podle času jednotlivých prodejů (live)"
                 : allBranches && chartOutput.stacked
-                  ? "Skládaný sloupec = prodejny v daném období (najeď pro kód a částku)"
-                  : "Tržby z uzávěrek ve zvoleném rozsahu"}
+                  ? "Skládaný sloupec = prodejny v daném období"
+                  : "Tržby z live transakcí ve zvoleném rozsahu"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -566,19 +554,17 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
                   <p className="text-sm text-muted-foreground py-12 text-center">
                     Vyberte alespoň jednu prodejnu v seznamu výše
                   </p>
-                ) : chartLoading || !hourlyReady ? (
+                ) : chartLoading ? (
                   <p className="text-sm text-muted-foreground py-12 text-center">
-                    {hourlyError
-                      ? "Nepodařilo se načíst transakce z uzávěrky"
-                      : "Načítání transakcí z uzávěrky…"}
+                    {posError
+                      ? "Nepodařilo se načíst transakce"
+                      : "Načítání transakcí…"}
                   </p>
                 ) : chartOutput.rows.every(
                     (r) => Number(r.total) === 0 && Number(r.revenue ?? 0) === 0
                   ) ? (
                   <p className="text-sm text-muted-foreground py-12 text-center">
-                    {granularity === "hour"
-                      ? "Pro intradenní graf chybí uzávěrka s transakcemi pro tento den"
-                      : "V tomto období nejsou žádné uzávěrky"}
+                    V tomto období nejsou žádné transakce
                   </p>
                 ) : (
                   <ChartContainer config={chartConfig} className="h-[320px] w-full">
@@ -666,13 +652,8 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
 
       <TurnoverInsightsPanel
         insights={periodInsights}
-        hourlyLoading={insightHoursLoading}
         productLimit={30}
-        description={
-          dayCount > HOURLY_INSIGHTS_MAX_DAYS
-            ? `Nejlepší/nejtišší den z období ${from === to ? from : `${from} – ${to}`}. Produkty a hodiny jen do ${HOURLY_INSIGHTS_MAX_DAYS} dní (dešifrování uzávěrek).`
-            : `Metriky z období ${from === to ? from : `${from} – ${to}`} · produkty z transakcí v uzávěrkách`
-        }
+        description={`Metriky z období ${from === to ? from : `${from} – ${to}`} · produkty z live transakcí`}
       />
     </div>
   );

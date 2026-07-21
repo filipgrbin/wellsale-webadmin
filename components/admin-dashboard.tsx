@@ -13,6 +13,7 @@ import { MachinesTable } from "@/components/machines-table";
 import { LicenseDetail } from "@/components/license-detail";
 import { AdminBackupsTable } from "@/components/admin-backups-table";
 import { AdminTurnoverCharts } from "@/components/turnover-charts";
+import { PosLiveTransactions } from "@/components/pos-live-transactions";
 import { AdminNotifications } from "@/components/admin-notifications";
 import { AdminReleases } from "@/components/admin-releases";
 import { Key, Building2, Monitor, LayoutDashboard, Database, LogOut, Bell, Rocket } from "lucide-react";
@@ -133,6 +134,7 @@ export default function AdminDashboard() {
 
           <TabsContent value="overview" className="space-y-6 m-0">
             <DashboardStats />
+            <PosLiveTransactions />
             <AdminTurnoverCharts />
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Licence</h3>

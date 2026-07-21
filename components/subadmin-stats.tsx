@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { getBranches, getBackupsStats, getMachines } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, Database, Monitor, HardDrive } from "lucide-react";
-import { SubadminTurnover } from "@/components/subadmin-turnover";
+import { PosLiveTransactions } from "@/components/pos-live-transactions";
 import { TurnoverCharts } from "@/components/turnover-charts";
 
 interface SubadminStatsProps {
@@ -43,8 +43,7 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
 
   return (
     <div className="space-y-6">
-      {/* Turnover: today + last 7 days switcher + week/month totals */}
-      <SubadminTurnover licenseKey={licenseKey} />
+      <PosLiveTransactions licenseKey={licenseKey} lockLicense />
 
       <TurnoverCharts licenseKey={licenseKey} />
 

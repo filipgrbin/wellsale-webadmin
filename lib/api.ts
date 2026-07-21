@@ -739,3 +739,145 @@ export async function uploadReleaseFileToS3(
     xhr.send(file);
   });
 }
+
+// ── Live POS sync (Aurora pos_transactions / pos_stock_movements) ─────────────
+
+export interface PosTxItem {
+  product_id?: number | null;
+  name_snapshot?: string;
+  product_name?: string;
+  name?: string;
+  qty?: number;
+  quantity?: number;
+  price_snapshot?: number;
+  unit_price?: number;
+  price?: number;
+}
+
+export interface PosTransaction {
+  branch_id: number;
+  local_id: number;
+  created_at: string;
+  payment_method: string;
+  subtotal: number;
+  total: number;
+  cash_given?: number | null;
+  change_returned?: number | null;
+  age_verified?: number | boolean;
+  age_verified_dob?: string | null;
+  manually_added?: number | boolean;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  items_json?: PosTxItem[] | string | null;
+  items?: PosTxItem[];
+  app_version?: string | null;
+  synced_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PosStockMovement {
+  branch_id: number;
+  local_id: number;
+  created_at: string;
+  product_id?: number | null;
+  product_name?: string | null;
+  delta: number;
+  kind?: string | null;
+  reason?: string | null;
+  transaction_id?: number | null;
+  batch_id?: string | null;
+  document_number?: string | null;
+  stock_after?: number | null;
+  user_id?: number | null;
+  deleted_at?: string | null;
+  app_version?: string | null;
+  synced_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PosTransactionsQuery {
+  licenseKey?: string;
+  branchId?: number;
+  day?: string;
+  from?: string;
+  to?: string;
+  hours?: number;
+  since?: string;
+  includeDeleted?: boolean;
+  limit?: number;
+}
+
+export interface PosTransactionsResponse {
+  ok: boolean;
+  branchId?: number | null;
+  licenseKey?: string | null;
+  scope?: "branch" | "license";
+  count: number;
+  nextSince: string;
+  window?: {
+    mode: string;
+    day?: string | null;
+    hours?: number;
+    from?: string | null;
+    to?: string | null;
+    since?: string | null;
+  };
+  transactions: PosTransaction[];
+}
+
+export interface PosStockMovementsResponse {
+  ok: boolean;
+  branchId?: number | null;
+  licenseKey?: string | null;
+  scope?: "branch" | "license";
+  count: number;
+  nextSince: string;
+  window?: {
+    mode: string;
+    day?: string | null;
+    hours?: number;
+    from?: string | null;
+    to?: string | null;
+    since?: string | null;
+  };
+  movements: PosStockMovement[];
+}
+
+function buildPosQueryParams(q: PosTransactionsQuery): Record<string, string> {
+  const params: Record<string, string> = {};
+  if (q.branchId != null) params.branchId = String(q.branchId);
+  else if (q.licenseKey) params.licenseKey = q.licenseKey;
+  if (q.day) params.day = q.day;
+  if (q.from) params.from = q.from;
+  if (q.to) params.to = q.to;
+  if (q.hours != null) params.hours = String(q.hours);
+  if (q.since) params.since = q.since;
+  if (q.includeDeleted) params.includeDeleted = "1";
+  if (q.limit != null) params.limit = String(q.limit);
+  return params;
+}
+
+/** Live POS sales feed for webadmin. Requires branchId or licenseKey. */
+export async function getPosTransactions(
+  query: PosTransactionsQuery
+): Promise<PosTransactionsResponse> {
+  if (query.branchId == null && !query.licenseKey) {
+    throw new Error("getPosTransactions requires branchId or licenseKey");
+  }
+  return apiRequest<PosTransactionsResponse>("/api/admin/pos/transactions", {
+    params: buildPosQueryParams(query),
+  });
+}
+
+/** Live POS stock movements feed. Requires branchId or licenseKey. */
+export async function getPosStockMovements(
+  query: PosTransactionsQuery
+): Promise<PosStockMovementsResponse> {
+  if (query.branchId == null && !query.licenseKey) {
+    throw new Error("getPosStockMovements requires branchId or licenseKey");
+  }
+  return apiRequest<PosStockMovementsResponse>("/api/admin/pos/stock-movements", {
+    params: buildPosQueryParams(query),
+  });
+}
+
