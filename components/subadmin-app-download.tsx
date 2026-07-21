@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { getReleases } from "@/lib/api";
 import { pickWebDownloadRelease } from "@/lib/release-download";
+import { downloadReleaseSetupViaPresign } from "@/lib/download-release";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, Loader2, Package } from "lucide-react";
@@ -51,16 +52,17 @@ export function SubadminAppDownload() {
   const release = pickWebDownloadRelease(data?.releases);
   const [downloading, setDownloading] = useState(false);
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!release) return;
     setDownloading(true);
     try {
-      window.location.href = `/api/admin/releases/download?id=${release.id}`;
+      // Presigned S3 URL (same as zálohy) — navigate to S3, no file through Next
+      await downloadReleaseSetupViaPresign(release);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Stahování selhalo");
+    } finally {
       setDownloading(false);
     }
-    window.setTimeout(() => setDownloading(false), 4000);
   };
 
   return (
@@ -77,7 +79,7 @@ export function SubadminAppDownload() {
             </CardDescription>
           </div>
           <Button
-            onClick={handleDownload}
+            onClick={() => void handleDownload()}
             disabled={!release || downloading || isLoading}
             className="gap-2 shrink-0"
           >
