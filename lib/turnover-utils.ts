@@ -11,6 +11,8 @@ export interface UzaverkaMeta {
   close_date?: string;
   total_revenue?: number;
   real_zisk?: number;
+  cash_total?: number;
+  qr_total?: number;
 }
 
 export interface DayAggregate {
@@ -28,6 +30,8 @@ export interface ClosureRecord {
   closeDate: string;
   uploadedAt: string;
   revenue: number;
+  cash: number;
+  qr: number;
   profit: number | null;
   txCount: number;
 }
@@ -45,7 +49,11 @@ export interface ChartBucket {
   key: string;
   label: string;
   byBranch: Map<number, number>;
+  byBranchCash: Map<number, number>;
+  byBranchQr: Map<number, number>;
   total: number;
+  cash: number;
+  qr: number;
 }
 
 /** Distinct branch colors for stacked bars (emerald-first palette). */
@@ -218,6 +226,24 @@ export interface HourlySalePoint {
   branchId: number;
   timestamp: string;
   revenue: number;
+  /** cash | qr | other */
+  payKind?: "cash" | "qr" | "other";
+}
+
+export function classifyPaymentKind(platbaTyp: string | null | undefined): "cash" | "qr" | "other" {
+  const t = String(platbaTyp || "").toLowerCase();
+  if (!t) return "other";
+  if (t.includes("hotov") || t.includes("cash") || t === "h") return "cash";
+  if (
+    t.includes("qr") ||
+    t.includes("kart") ||
+    t.includes("card") ||
+    t.includes("bezhot") ||
+    t.includes("transfer")
+  ) {
+    return "qr";
+  }
+  return "other";
 }
 
 export function saleMatchesDateRange(
@@ -274,7 +300,11 @@ export function buildHourlyChartBucketsFromSales(
       key: `h${h}`,
       label: `${String(h).padStart(2, "0")}:00`,
       byBranch: new Map(),
+      byBranchCash: new Map(),
+      byBranchQr: new Map(),
       total: 0,
+      cash: 0,
+      qr: 0,
     });
   }
   for (const sale of sales) {
@@ -286,6 +316,21 @@ export function buildHourlyChartBucketsFromSales(
       sale.branchId,
       (bucket.byBranch.get(sale.branchId) ?? 0) + sale.revenue
     );
+    const kind = sale.payKind ?? "other";
+    if (kind === "qr") {
+      bucket.qr += sale.revenue;
+      bucket.byBranchQr.set(
+        sale.branchId,
+        (bucket.byBranchQr.get(sale.branchId) ?? 0) + sale.revenue
+      );
+    } else {
+      // cash + other → darker shade so the column stays filled
+      bucket.cash += sale.revenue;
+      bucket.byBranchCash.set(
+        sale.branchId,
+        (bucket.byBranchCash.get(sale.branchId) ?? 0) + sale.revenue
+      );
+    }
     bucket.total += sale.revenue;
   }
   return hours.map((h) => buckets.get(h)!);
@@ -322,13 +367,18 @@ export function parseClosureRecords(
     const meta = b.metadata_json as UzaverkaMeta;
     const closeDate = extractCloseDate(b)!;
     const rz = meta?.real_zisk == null ? null : Number(meta.real_zisk);
+    const cash = Number(meta?.cash_total) || 0;
+    const qr = Number(meta?.qr_total) || 0;
+    const revenue = Number(meta?.total_revenue) || cash + qr || 0;
     return {
       branchId: b.branch_id,
       branchCode: b.branch_code || `#${b.branch_id}`,
       branchName: b.branch_name || `Pobočka ${b.branch_id}`,
       closeDate,
       uploadedAt: b.uploaded_at,
-      revenue: Number(meta?.total_revenue) || 0,
+      revenue,
+      cash,
+      qr,
       profit: Number.isFinite(rz) ? rz : null,
       txCount: Number(meta?.tx_count) || 0,
     };
@@ -345,18 +395,24 @@ export function filterRecordsInRange(
 
 export function sumRecords(records: ClosureRecord[]): {
   revenue: number;
+  cash: number;
+  qr: number;
   profit: number;
   profitKnown: boolean;
   tx: number;
   branches: Set<number>;
 } {
   let revenue = 0;
+  let cash = 0;
+  let qr = 0;
   let profit = 0;
   let profitKnown = false;
   let tx = 0;
   const branches = new Set<number>();
   for (const r of records) {
     revenue += r.revenue;
+    cash += r.cash;
+    qr += r.qr;
     tx += r.txCount;
     branches.add(r.branchId);
     if (r.profit != null) {
@@ -364,7 +420,33 @@ export function sumRecords(records: ClosureRecord[]): {
       profitKnown = true;
     }
   }
-  return { revenue, profit, profitKnown, tx, branches };
+  return { revenue, cash, qr, profit, profitKnown, tx, branches };
+}
+
+function emptyBucket(key: string, label: string): ChartBucket {
+  return {
+    key,
+    label,
+    byBranch: new Map(),
+    byBranchCash: new Map(),
+    byBranchQr: new Map(),
+    total: 0,
+    cash: 0,
+    qr: 0,
+  };
+}
+
+function addRecordToBucket(bucket: ChartBucket, r: ClosureRecord) {
+  let cash = r.cash;
+  let qr = r.qr;
+  // If POS metadata has no payment split, keep the column filled (all as cash shade).
+  if (cash + qr === 0 && r.revenue > 0) cash = r.revenue;
+  bucket.byBranch.set(r.branchId, (bucket.byBranch.get(r.branchId) ?? 0) + r.revenue);
+  bucket.byBranchCash.set(r.branchId, (bucket.byBranchCash.get(r.branchId) ?? 0) + cash);
+  bucket.byBranchQr.set(r.branchId, (bucket.byBranchQr.get(r.branchId) ?? 0) + qr);
+  bucket.total += r.revenue;
+  bucket.cash += cash;
+  bucket.qr += qr;
 }
 
 export function buildChartBuckets(
@@ -384,19 +466,13 @@ export function buildChartBuckets(
     const months = monthsInRange(from, to);
     const buckets = new Map<string, ChartBucket>();
     for (const ym of months) {
-      buckets.set(ym, {
-        key: ym,
-        label: monthLabel(ym),
-        byBranch: new Map(),
-        total: 0,
-      });
+      buckets.set(ym, emptyBucket(ym, monthLabel(ym)));
     }
     for (const r of filtered) {
       const ym = r.closeDate.slice(0, 7);
       const bucket = buckets.get(ym);
       if (!bucket) continue;
-      bucket.byBranch.set(r.branchId, (bucket.byBranch.get(r.branchId) ?? 0) + r.revenue);
-      bucket.total += r.revenue;
+      addRecordToBucket(bucket, r);
     }
     return months.map((ym) => buckets.get(ym)!);
   }
@@ -406,13 +482,12 @@ export function buildChartBuckets(
   const buckets = new Map<string, ChartBucket>();
   for (const d of days) {
     const { dm } = dayLabel(d);
-    buckets.set(d, { key: d, label: dm, byBranch: new Map(), total: 0 });
+    buckets.set(d, emptyBucket(d, dm));
   }
   for (const r of filtered) {
     const bucket = buckets.get(r.closeDate);
     if (!bucket) continue;
-    bucket.byBranch.set(r.branchId, (bucket.byBranch.get(r.branchId) ?? 0) + r.revenue);
-    bucket.total += r.revenue;
+    addRecordToBucket(bucket, r);
   }
   return days.map((d) => buckets.get(d)!);
 }
@@ -421,10 +496,32 @@ export function branchDataKey(branchId: number): string {
   return `b_${branchId}`;
 }
 
+export function branchCashKey(branchId: number): string {
+  return `b_${branchId}_cash`;
+}
+
+export function branchQrKey(branchId: number): string {
+  return `b_${branchId}_qr`;
+}
+
+/** Same hue, lighter shade for QR portion within a branch/stack. */
+export function lightenHex(hex: string, amount = 0.45): string {
+  const raw = hex.replace("#", "");
+  if (raw.length !== 6) return hex;
+  const num = Number.parseInt(raw, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
 export interface RechartsChartOutput {
   rows: Record<string, string | number>[];
   branchIds: number[];
   stacked: boolean;
+  /** When true, each column splits cash/QR in the same color family. */
+  paymentSplit: boolean;
   colors: Record<string, string>;
   labels: Record<string, string>;
 }
@@ -439,29 +536,56 @@ export function bucketsToRechartsData(
     for (const id of b.byBranch.keys()) branchIdSet.add(id);
   }
   const branchIds = [...branchIdSet].sort((a, c) => a - c);
+  const multiBranch = stacked && branchIds.length > 1;
+  const hasPaymentSplit = buckets.some((b) => b.cash > 0 || b.qr > 0);
 
   const colors: Record<string, string> = {};
   const labels: Record<string, string> = {};
 
-  branchIds.forEach((id, i) => {
-    const key = branchDataKey(id);
-    const info = branchMeta.get(id);
-    labels[key] = info?.code || `#${id}`;
-    colors[key] = stacked
-      ? BRANCH_PALETTE[i % BRANCH_PALETTE.length]
-      : EMERALD_DARK;
-  });
+  if (multiBranch) {
+    branchIds.forEach((id, i) => {
+      const base = BRANCH_PALETTE[i % BRANCH_PALETTE.length];
+      const info = branchMeta.get(id);
+      const code = info?.code || `#${id}`;
+      const cashKey = branchCashKey(id);
+      const qrKey = branchQrKey(id);
+      labels[cashKey] = `${code} hotovost`;
+      labels[qrKey] = `${code} QR`;
+      colors[cashKey] = base;
+      colors[qrKey] = lightenHex(base, 0.42);
+      // keep base key for legend
+      labels[branchDataKey(id)] = code;
+      colors[branchDataKey(id)] = base;
+    });
+  } else {
+    labels.cash = "Hotovost";
+    labels.qr = "QR";
+    colors.cash = EMERALD_DARK;
+    colors.qr = lightenHex(EMERALD_DARK, 0.42);
+    colors.revenue = EMERALD_DARK;
+    labels.revenue = "Tržby";
+  }
 
   const rows = buckets.map((bucket) => {
     const row: Record<string, string | number> = {
       key: bucket.key,
       label: bucket.label,
       total: bucket.total,
+      cash: bucket.cash,
+      qr: bucket.qr,
     };
-    if (stacked && branchIds.length > 1) {
+    if (multiBranch) {
       for (const id of branchIds) {
+        row[branchCashKey(id)] = bucket.byBranchCash.get(id) ?? 0;
+        row[branchQrKey(id)] = bucket.byBranchQr.get(id) ?? 0;
         row[branchDataKey(id)] = bucket.byBranch.get(id) ?? 0;
       }
+    } else if (hasPaymentSplit) {
+      row.cash = bucket.cash;
+      row.qr = bucket.qr;
+      // remainder (unknown payment) keeps total correct in tooltip
+      row.other = Math.max(0, bucket.total - bucket.cash - bucket.qr);
+      row.revenue = bucket.total;
     } else {
       row.revenue = bucket.total;
     }
@@ -471,7 +595,8 @@ export function bucketsToRechartsData(
   return {
     rows,
     branchIds,
-    stacked: stacked && branchIds.length > 1,
+    stacked: multiBranch,
+    paymentSplit: hasPaymentSplit,
     colors,
     labels,
   };

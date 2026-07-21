@@ -506,6 +506,22 @@ export async function getFault(id: number): Promise<{ ok: boolean; fault: FaultD
   return apiRequest("/api/admin/faults/get", { params: { id: String(id) } });
 }
 
+/** Mark a reported fault as resolved (or reopen). POST /api/admin/faults/resolve */
+export async function resolveFault(data: {
+  id: number;
+  resolved?: boolean;
+  resolution?: string | null;
+}): Promise<{ ok: boolean; fault: FaultLog }> {
+  return apiRequest("/api/admin/faults/resolve", {
+    method: "POST",
+    body: {
+      id: data.id,
+      resolved: data.resolved ?? true,
+      resolution: data.resolution ?? null,
+    },
+  });
+}
+
 // Notifications
 export type NotificationPriority = "low" | "medium" | "high" | "immediate";
 

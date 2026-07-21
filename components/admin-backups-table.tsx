@@ -26,6 +26,7 @@ import {
 import { BranchAppVersion } from "@/components/branch-app-version";
 import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
 import { TransactionStockMovementPanel } from "@/components/transaction-stock-movement-panel";
+import { UzaverkaAnalysisPanel } from "@/components/uzaverka-analysis-panel";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
 import { resolveCashierName } from "@/lib/uzaverka-meta";
 import {
@@ -88,6 +89,7 @@ import {
   Settings,
   ArrowUp,
   ArrowDown,
+  BarChart3,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
@@ -617,13 +619,24 @@ export function AdminBackupsTable() {
                 ]}
               />
 
-              <Tabs defaultValue="prodeje">
+              <Tabs defaultValue="analyza">
                 <TabsList>
+                  <TabsTrigger value="analyza" className="gap-2">
+                    <BarChart3 className="h-4 w-4" />
+                    Analýza
+                  </TabsTrigger>
                   <TabsTrigger value="prodeje" className="gap-2">
                     <ShoppingCart className="h-4 w-4" />
                     Prodeje ({decryptedData.prodeje.length})
                   </TabsTrigger>
                 </TabsList>
+
+                <TabsContent value="analyza" className="mt-4">
+                  <UzaverkaAnalysisPanel
+                    decryptedData={decryptedData}
+                    metadataJson={viewingBackup?.metadata_json}
+                  />
+                </TabsContent>
 
                 <TabsContent value="prodeje" className="mt-4">
                   <div className="grid grid-cols-5 gap-4 items-start">

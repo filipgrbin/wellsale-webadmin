@@ -7,20 +7,28 @@ import { getBackups, getLicenses, getBranches, type Branch } from "@/lib/api";
 import {
   type ChartGranularity,
   type RangePreset,
+  branchCashKey,
   branchDataKey,
+  branchQrKey,
   bucketsToRechartsData,
   buildChartBuckets,
   buildHourlyChartBucketsFromSales,
   formatCurrency,
   getEffectiveDateRange,
   parseClosureRecords,
-  pickLatestUzaverkaBackupsForDay,
   pragueDate,
   rangeDayCount,
   sumRecords,
   filterRecordsInRange,
+  extractCloseDate,
 } from "@/lib/turnover-utils";
-import { fetchHourlySalesForChart } from "@/lib/turnover-hourly";
+import { fetchHourlySalesForRange, HOURLY_INSIGHTS_MAX_DAYS } from "@/lib/turnover-hourly";
+import {
+  buildPeriodInsights,
+  mergeProductCounts,
+  perProductFromMetadata,
+} from "@/lib/turnover-insights";
+import { TurnoverInsightsPanel } from "@/components/turnover-insights-panel";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -40,10 +48,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
-import { TrendingUp, CalendarDays, CalendarRange, Store, ChevronDown } from "lucide-react";
+import { TrendingUp, CalendarDays, CalendarRange, Store, ChevronDown, Banknote, QrCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const EMERALD_DARK = "#059669";
+const EMERALD_LIGHT = "#6ee7b7";
 
 interface TurnoverChartsProps {
   licenseKey?: string;
@@ -64,6 +73,12 @@ function StackedBranchTooltip({
   const items = payload.filter((p) => Number(p.value) > 0);
   if (!items.length) return null;
   const total = items.reduce((s, p) => s + Number(p.value ?? 0), 0);
+  const cash = items
+    .filter((p) => String(p.dataKey || "").endsWith("_cash") || p.dataKey === "cash")
+    .reduce((s, p) => s + Number(p.value ?? 0), 0);
+  const qr = items
+    .filter((p) => String(p.dataKey || "").endsWith("_qr") || p.dataKey === "qr")
+    .reduce((s, p) => s + Number(p.value ?? 0), 0);
   return (
     <div className="border-border/50 bg-background min-w-[10rem] rounded-lg border px-3 py-2 text-xs shadow-xl">
       <p className="font-medium mb-1.5">{label}</p>
@@ -81,8 +96,13 @@ function StackedBranchTooltip({
           </div>
         ))}
       </div>
+      {(cash > 0 || qr > 0) && (
+        <p className="mt-1.5 pt-1.5 border-t border-border text-muted-foreground">
+          Hotovost {formatCurrency(cash)} · QR {formatCurrency(qr)}
+        </p>
+      )}
       {items.length > 1 && (
-        <p className="mt-1.5 pt-1.5 border-t border-border font-medium">
+        <p className="mt-1 font-medium">
           Celkem {formatCurrency(total)}
         </p>
       )}
@@ -96,14 +116,23 @@ function SimpleTooltip({
   label,
 }: {
   active?: boolean;
-  payload?: Array<{ value?: number }>;
+  payload?: Array<{ dataKey?: string; value?: number; payload?: Record<string, number> }>;
   label?: string;
 }) {
   if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  const cash = Number(row?.cash ?? 0);
+  const qr = Number(row?.qr ?? 0);
+  const total = Number(row?.total ?? row?.revenue ?? payload[0]?.value ?? 0);
   return (
     <div className="border-border/50 bg-background rounded-lg border px-3 py-2 text-xs shadow-xl">
       <p className="font-medium mb-0.5">{label}</p>
-      <p className="text-emerald-600 font-semibold">{formatCurrency(Number(payload[0].value))}</p>
+      <p className="text-emerald-600 font-semibold">{formatCurrency(total)}</p>
+      {(cash > 0 || qr > 0) && (
+        <p className="text-muted-foreground mt-1">
+          Hotovost {formatCurrency(cash)} · QR {formatCurrency(qr)}
+        </p>
+      )}
     </div>
   );
 }
@@ -201,35 +230,55 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
 
   const needsHourlySales = granularity === "hour" && canUseHourly;
 
-  const hourlyBackupIds = useMemo(() => {
-    if (!needsHourlySales || !backupsData?.backups) return "";
-    return pickLatestUzaverkaBackupsForDay(backupsData.backups, from, {
-      licenseKey: effectiveLicense,
-      branchIds: activeBranchIds,
-    })
-      .map((b) => b.id)
-      .sort((a, b) => a - b)
-      .join(",");
-  }, [needsHourlySales, backupsData, from, effectiveLicense, activeBranchIds]);
+  const needsInsightHours = dayCount >= 1 && dayCount <= HOURLY_INSIGHTS_MAX_DAYS;
 
-  const hasHourlyBackups = Boolean(hourlyBackupIds);
-
-  const { data: hourlySales, isLoading: hourlyLoading, error: hourlyError } = useSWR(
-    needsHourlySales && backupsData && hasHourlyBackups
+  const { data: insightHourlySales, isLoading: insightHourlyLoading, error: hourlyError } = useSWR(
+    needsInsightHours && backupsData
       ? [
-          "turnover-hourly-sales",
+          "turnover-insight-hours",
           effectiveLicense ?? "all",
           from,
+          to,
           activeBranchIds ? [...activeBranchIds].sort((a, b) => a - b).join(",") : "all",
-          hourlyBackupIds,
         ]
       : null,
     () =>
-      fetchHourlySalesForChart(backupsData!.backups, from, {
+      fetchHourlySalesForRange(backupsData!.backups, from, to, {
         licenseKey: effectiveLicense,
         branchIds: activeBranchIds,
       }),
     { revalidateOnFocus: false }
+  );
+
+  // Keep chart-compatible alias for single-day hour view
+  const hourlySales = needsHourlySales ? insightHourlySales : undefined;
+
+  const periodProducts = useMemo(() => {
+    const backups = backupsData?.backups ?? [];
+    const maps: Array<Record<string, number> | null> = [];
+    const branchFilter =
+      activeBranchIds && activeBranchIds.length > 0 ? new Set(activeBranchIds) : null;
+    for (const b of backups) {
+      if (b.kind !== "uzaverka" && b.kind !== "close") continue;
+      if (effectiveLicense && b.license_key !== effectiveLicense) continue;
+      if (branchFilter && !branchFilter.has(b.branch_id)) continue;
+      const closeDate = extractCloseDate(b);
+      if (!closeDate || closeDate < from || closeDate > to) continue;
+      maps.push(perProductFromMetadata(b.metadata_json));
+    }
+    return mergeProductCounts(...maps);
+  }, [backupsData, effectiveLicense, activeBranchIds, from, to]);
+
+  const insightHoursLoading = needsInsightHours && insightHourlyLoading;
+
+  const periodInsights = useMemo(
+    () =>
+      buildPeriodInsights({
+        records: rangeRecords,
+        hourlySales: insightHourlySales,
+        products: periodProducts,
+      }),
+    [rangeRecords, insightHourlySales, periodProducts]
   );
 
   const buckets = useMemo(() => {
@@ -239,9 +288,8 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
     return buildChartBuckets(allRecords, granularity, from, to);
   }, [allRecords, granularity, from, to, hourlySales]);
 
-  const chartLoading = isLoading || (needsHourlySales && hasHourlyBackups && hourlyLoading);
-  const hourlyReady =
-    !needsHourlySales || !hasHourlyBackups || (hourlySales !== undefined && !hourlyLoading);
+  const chartLoading = isLoading || (needsHourlySales && insightHourlyLoading);
+  const hourlyReady = !needsHourlySales || (insightHourlySales !== undefined && !insightHourlyLoading);
 
   const stacked = allBranches;
 
@@ -403,7 +451,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
       )}
 
       {/* Summary for selected range */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -414,6 +462,38 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
             <div className="text-2xl font-bold">{formatCurrency(rangeSummary.revenue)}</div>
             <p className="text-xs text-emerald-500 mt-1">
               zisk {rangeSummary.profitKnown ? formatCurrency(rangeSummary.profit) : "—"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <Banknote className="h-3.5 w-3.5" />
+              Hotovost
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold tabular-nums">{formatCurrency(rangeSummary.cash)}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {rangeSummary.revenue > 0
+                ? `${((rangeSummary.cash / rangeSummary.revenue) * 100).toFixed(0)} % tržeb`
+                : "—"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <QrCode className="h-3.5 w-3.5" />
+              QR platby
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold tabular-nums">{formatCurrency(rangeSummary.qr)}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {rangeSummary.revenue > 0
+                ? `${((rangeSummary.qr / rangeSummary.revenue) * 100).toFixed(0)} % tržeb`
+                : "—"}
             </p>
           </CardContent>
         </Card>
@@ -533,15 +613,39 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
                         }
                       />
                       {chartOutput.stacked ? (
-                        chartOutput.branchIds.map((id) => (
+                        chartOutput.branchIds.flatMap((id) => [
                           <Bar
-                            key={id}
-                            dataKey={branchDataKey(id)}
+                            key={branchCashKey(id)}
+                            dataKey={branchCashKey(id)}
                             stackId="branches"
-                            fill={chartOutput.colors[branchDataKey(id)]}
+                            fill={chartOutput.colors[branchCashKey(id)]}
                             radius={0}
+                          />,
+                          <Bar
+                            key={branchQrKey(id)}
+                            dataKey={branchQrKey(id)}
+                            stackId="branches"
+                            fill={chartOutput.colors[branchQrKey(id)]}
+                            radius={0}
+                          />,
+                        ])
+                      ) : chartOutput.paymentSplit ? (
+                        <>
+                          <Bar
+                            dataKey="cash"
+                            stackId="pay"
+                            fill={EMERALD_DARK}
+                            radius={[0, 0, 0, 0]}
+                            name="Hotovost"
                           />
-                        ))
+                          <Bar
+                            dataKey="qr"
+                            stackId="pay"
+                            fill={EMERALD_LIGHT}
+                            radius={[4, 4, 0, 0]}
+                            name="QR"
+                          />
+                        </>
                       ) : (
                         <Bar
                           dataKey="revenue"
@@ -563,13 +667,30 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
                             className="h-2.5 w-2.5 rounded-sm"
                             style={{ backgroundColor: chartOutput.colors[key] }}
                           />
+                          <span
+                            className="h-2.5 w-2.5 rounded-sm opacity-70"
+                            style={{ backgroundColor: chartOutput.colors[branchQrKey(id)] }}
+                          />
                           <span className="font-medium">{chartOutput.labels[key]}</span>
                           <span className="text-muted-foreground truncate max-w-[120px]">
                             {branchMeta.get(id)?.name}
                           </span>
+                          <span className="text-muted-foreground">· tmavší hotovost, světlejší QR</span>
                         </div>
                       );
                     })}
+                  </div>
+                )}
+                {!chartOutput.stacked && chartOutput.paymentSplit && (
+                  <div className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: EMERALD_DARK }} />
+                      Hotovost
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: EMERALD_LIGHT }} />
+                      QR
+                    </span>
                   </div>
                 )}
               </TabsContent>
@@ -583,6 +704,17 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           )}
         </CardContent>
       </Card>
+
+      <TurnoverInsightsPanel
+        insights={periodInsights}
+        hourlyLoading={insightHoursLoading}
+        productLimit={30}
+        description={
+          dayCount > HOURLY_INSIGHTS_MAX_DAYS
+            ? `Nejlepší/nejtichší den z období ${from === to ? from : `${from} – ${to}`}. Hodiny jen do ${HOURLY_INSIGHTS_MAX_DAYS} dní.`
+            : `Metriky z období ${from === to ? from : `${from} – ${to}`}`
+        }
+      />
     </div>
   );
 }

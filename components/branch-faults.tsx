@@ -2,16 +2,27 @@
 
 import { useState, type ReactNode } from "react";
 import useSWR from "swr";
-import { getFaults, getFault, type FaultLog, type FaultDetail, type FaultAuditRow } from "@/lib/api";
+import {
+  getFaults,
+  getFault,
+  resolveFault,
+  type FaultLog,
+  type FaultDetail,
+  type FaultAuditRow,
+} from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -32,7 +43,9 @@ import {
   CheckCircle2,
   ShieldCheck,
   Building2,
+  RotateCcw,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface BranchFaultsProps {
   licenseKey: string;
@@ -48,8 +61,6 @@ interface ParsedMainLine {
   message: string;
 }
 
-// Main/updater log lines (log_lines) look like:
-//   [2026-07-01T10:14:58.123Z] [ERROR] [printer] tisk selhal: timeout
 function parseMainLine(line: string): ParsedMainLine {
   const full = line.match(/^\s*\[([^\]]+)\]\s*\[([^\]]*)\]\s*\[([^\]]*)\]\s*([\s\S]*)$/);
   if (full) {
@@ -91,8 +102,6 @@ function parsePayload(payload: unknown): Record<string, unknown> | null {
     : null;
 }
 
-// The backend already extracts audit_rows / log_lines to the top level, but
-// fall back to json_payload so nothing is lost if it doesn't (e.g. old build).
 function extractAttachments(detail: FaultDetail | undefined): {
   audit: FaultAuditRow[];
   log: string[];
@@ -119,29 +128,94 @@ function isResolved(f: { resolved?: boolean; resolution?: string | null }): bool
 
 export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps) {
   const showBranch = branchId == null;
-  const { data, isLoading, error } = useSWR(
+  const { data, isLoading, error, mutate } = useSWR(
     ["branch-faults", licenseKey, branchId ?? "all"],
     () => getFaults({ licenseKey, branchId, limit: 500 })
   );
   const [selected, setSelected] = useState<FaultLog | null>(null);
+  const [resolutionNote, setResolutionNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"open" | "resolved" | "all">("open");
 
-  const { data: detailData, isLoading: detailLoading } = useSWR(
+  const { data: detailData, isLoading: detailLoading, mutate: mutateDetail } = useSWR(
     selected ? ["fault-detail", selected.id] : null,
     () => getFault(selected!.id)
   );
 
   const faults = data?.faults || [];
+  const openCount = faults.filter((f) => !isResolved(f)).length;
+  const resolvedCount = faults.length - openCount;
+  const filteredFaults =
+    statusFilter === "all"
+      ? faults
+      : statusFilter === "open"
+        ? faults.filter((f) => !isResolved(f))
+        : faults.filter((f) => isResolved(f));
+
   const detail = detailData?.fault;
   const { audit: auditRows, log: logLines } = extractAttachments(detail);
+  const current = detail ?? selected;
+  const resolved = current ? isResolved(current) : false;
+
+  const openFault = (f: FaultLog) => {
+    setSelected(f);
+    setResolutionNote(f.resolution || "");
+  };
+
+  const handleResolve = async (markResolved: boolean) => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const note = resolutionNote.trim();
+      const result = await resolveFault({
+        id: selected.id,
+        resolved: markResolved,
+        resolution: markResolved ? note || "Vyřešeno v administraci" : null,
+      });
+      const updated = result.fault;
+      setSelected(updated);
+      setResolutionNote(updated.resolution || "");
+      await mutate();
+      await mutateDetail();
+      toast.success(markResolved ? "Problém označen jako vyřešený" : "Problém znovu otevřen");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Nepodařilo se uložit stav");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <>
       <Card className="border-border bg-card">
-        <CardHeader>
+        <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between space-y-0">
           <CardTitle className="flex items-center gap-2 text-lg">
             <AlertTriangle className="h-5 w-5 text-warning" />
             {title ?? "Nahlášené chyby a výpadky"} ({faults.length})
           </CardTitle>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant={statusFilter === "open" ? "default" : "outline"}
+              onClick={() => setStatusFilter("open")}
+            >
+              Nevyřešené ({openCount})
+            </Button>
+            <Button
+              size="sm"
+              variant={statusFilter === "resolved" ? "default" : "outline"}
+              onClick={() => setStatusFilter("resolved")}
+            >
+              Vyřešené ({resolvedCount})
+            </Button>
+            <Button
+              size="sm"
+              variant={statusFilter === "all" ? "default" : "outline"}
+              onClick={() => setStatusFilter("all")}
+            >
+              Vše
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -167,18 +241,22 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {faults.length === 0 ? (
+                  {filteredFaults.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={showBranch ? 6 : 5} className="py-8 text-center text-muted-foreground">
-                        Žádné nahlášené chyby
+                        {statusFilter === "open"
+                          ? "Žádné nevyřešené problémy"
+                          : statusFilter === "resolved"
+                            ? "Žádné vyřešené problémy"
+                            : "Žádné nahlášené chyby"}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    faults.map((f) => (
+                    filteredFaults.map((f) => (
                       <TableRow
                         key={f.id}
                         className="cursor-pointer"
-                        onClick={() => setSelected(f)}
+                        onClick={() => openFault(f)}
                       >
                         <TableCell className="whitespace-nowrap text-sm">{fmt(f.created_at)}</TableCell>
                         {showBranch && (
@@ -219,14 +297,22 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
         </CardContent>
       </Card>
 
-      <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null); }}>
-        <DialogContent className="max-w-[98vw] sm:max-w-5xl w-full max-h-[95vh] flex flex-col">
+      <Dialog
+        open={!!selected}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSelected(null);
+            setResolutionNote("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-[98vw] sm:max-w-5xl w-full max-h-[95vh] overflow-y-auto flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-warning" />
               Detail nahlášené chyby #{selected?.id}
               {selected && (
-                isResolved(detail ?? selected) ? (
+                resolved ? (
                   <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Vyřešené</Badge>
                 ) : (
                   <Badge variant="secondary">Nevyřešené</Badge>
@@ -240,8 +326,7 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
           </DialogHeader>
 
           {selected && (
-            <div className="flex-1 overflow-hidden flex flex-col gap-4">
-              {/* Metadata (from the list row, available instantly) */}
+            <div className="flex-1 flex flex-col gap-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 {showBranch && (
                   <Detail icon={<Building2 className="h-4 w-4 text-primary" />} label="Pobočka" value={selected.branch_name || `#${selected.branch_id}`} />
@@ -257,14 +342,28 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
                 <p className="whitespace-pre-wrap text-sm">{selected.reason || "—"}</p>
               </div>
 
-              {selected.resolution && (
-                <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3">
-                  <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-green-500">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Řešení
-                  </p>
-                  <p className="whitespace-pre-wrap text-sm">{selected.resolution}</p>
+              <div className="rounded-lg border border-border p-3 space-y-3">
+                <div>
+                  <Label htmlFor="fault-resolution" className="text-xs text-muted-foreground">
+                    Poznámka k řešení
+                  </Label>
+                  <Textarea
+                    id="fault-resolution"
+                    className="mt-1.5"
+                    rows={3}
+                    placeholder="Volitelně: co se udělalo / jak se to vyřešilo"
+                    value={resolutionNote}
+                    onChange={(e) => setResolutionNote(e.target.value)}
+                    disabled={saving}
+                  />
                 </div>
-              )}
+                {current?.resolution && resolved && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                    Uloženo řešení: {current.resolution}
+                  </p>
+                )}
+              </div>
 
               {(selected.signature || selected.cert_thumbprint) && (
                 <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-secondary/30 p-3 text-xs">
@@ -278,8 +377,7 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
                 </div>
               )}
 
-              {/* Two attached logs (fetched from /faults/get) */}
-              <Tabs defaultValue="audit" className="flex-1 overflow-hidden flex flex-col">
+              <Tabs defaultValue="audit" className="flex-1 flex flex-col">
                 <TabsList>
                   <TabsTrigger value="audit" className="gap-2">
                     <ClipboardList className="h-4 w-4" />
@@ -291,7 +389,7 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
                   </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="audit" className="mt-3 flex-1 overflow-hidden">
+                <TabsContent value="audit" className="mt-3">
                   <ScrollArea className="h-[360px] rounded-lg border border-border">
                     {detailLoading ? (
                       <div className="flex items-center gap-2 p-4">
@@ -339,7 +437,7 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
                   </ScrollArea>
                 </TabsContent>
 
-                <TabsContent value="main" className="mt-3 flex-1 overflow-hidden">
+                <TabsContent value="main" className="mt-3">
                   <ScrollArea className="h-[360px] rounded-lg border border-border">
                     {detailLoading ? (
                       <div className="flex items-center gap-2 p-4">
@@ -376,6 +474,32 @@ export function BranchFaults({ licenseKey, branchId, title }: BranchFaultsProps)
                   </ScrollArea>
                 </TabsContent>
               </Tabs>
+
+              <DialogFooter className="gap-2 sm:gap-2">
+                <Button variant="outline" onClick={() => setSelected(null)} disabled={saving}>
+                  Zavřít
+                </Button>
+                {resolved ? (
+                  <Button
+                    variant="secondary"
+                    disabled={saving}
+                    onClick={() => void handleResolve(false)}
+                    className="gap-2"
+                  >
+                    {saving ? <Spinner className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
+                    Znovu otevřít
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={saving}
+                    onClick={() => void handleResolve(true)}
+                    className="gap-2"
+                  >
+                    {saving ? <Spinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Označit jako vyřešené
+                  </Button>
+                )}
+              </DialogFooter>
             </div>
           )}
         </DialogContent>
