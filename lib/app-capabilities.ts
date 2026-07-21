@@ -120,12 +120,12 @@ export function summarizeCapability(
     else unsupported.push(row);
   }
 
-  const cap = APP_CAPABILITIES[capability];
   let notice: string | null = null;
   if (unsupported.length > 0 && supported.length > 0) {
-    notice = `${cap.label}: ${unsupported.length} prodejen na starší appce (potřeba ${cap.minVersion}+) — u nich live data nemusí být.`;
+    notice = `${unsupported.length} prodejen má starší verzi pokladny — u nich se některé údaje nemusí zobrazit. Doporučujeme aktualizaci.`;
   } else if (unsupported.length > 0 && supported.length === 0) {
-    notice = `${cap.label} vyžaduje WellSale ${cap.minVersion}+. Aktuální prodejny mají starší verzi nebo neznámou — sekce může zůstat prázdná.`;
+    notice =
+      "Prodejny mají starší verzi pokladny — tato sekce může zůstat prázdná, dokud se pokladny neaktualizují.";
   }
 
   return {

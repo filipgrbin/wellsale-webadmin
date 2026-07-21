@@ -113,8 +113,8 @@ export function compareDayTotals(opts: {
       status: "open",
       revenueDelta: null,
       txDelta: null,
-      label: "Otevřený den",
-      hint: "Jen live data — uzávěrka ještě není. Věř live.",
+      label: "Bez uzávěrky",
+      hint: "Den ještě nemá uzávěrku — platí součty z prodejů.",
     };
   }
 
@@ -124,8 +124,8 @@ export function compareDayTotals(opts: {
       status: "no_live",
       revenueDelta: -uzaverka.revenue,
       txDelta: -uzaverka.txCount,
-      label: "Bez live",
-      hint: "Uzávěrka je, ale cloud nemá transakce. Dočasně věř uzávěrce; na pokladně sync/reconcile.",
+      label: "Chybí prodeje",
+      hint: "Uzávěrka je nahraná, ale v cloudu nejsou transakce.",
     };
   }
 
@@ -140,7 +140,7 @@ export function compareDayTotals(opts: {
       revenueDelta,
       txDelta,
       label: "OK",
-      hint: "Live a uzávěrka sedí.",
+      hint: "Prodeje a uzávěrka sedí.",
     };
   }
 
@@ -153,8 +153,8 @@ export function compareDayTotals(opts: {
       label: `Δ ${formatDeltaKč(revenueDelta)}`,
       hint:
         revenueDelta < 0
-          ? "Live < uzávěrka — na pokladně znovu sync / reconcile."
-          : "Live > uzávěrka — zkontroluj TX po uzávěrce / duplicity.",
+          ? "Prodeje < uzávěrka — zkontroluj sync pokladny."
+          : "Prodeje > uzávěrka — možné prodeje po uzavření / duplicity.",
     };
   }
 
@@ -166,8 +166,8 @@ export function compareDayTotals(opts: {
     label: `Δ ${formatDeltaKč(revenueDelta)}`,
     hint:
       revenueDelta < 0
-        ? "Live výrazně pod uzávěrkou — chybí TX na cloudu."
-        : "Live výrazně nad uzávěrkou — ověř close_date a duplicity.",
+        ? "Prodeje výrazně pod uzávěrkou — chybí transakce v cloudu."
+        : "Prodeje výrazně nad uzávěrkou — ověř datum dne a duplicity.",
   };
 }
 
@@ -232,26 +232,30 @@ export interface ReconcileReport {
 export async function buildReconcileReport(opts: {
   licenseKey: string;
   days?: number;
+  /** Optional: only this branch. */
+  branchId?: number;
 }): Promise<ReconcileReport> {
   const days = opts.days ?? 7;
   const dayList = lastNDays(days); // newest first
   const to = dayList[0] || pragueDate(new Date());
   const from = dayList[dayList.length - 1] || to;
 
+  const posScope = opts.branchId
+    ? { branchId: opts.branchId }
+    : { licenseKey: opts.licenseKey };
+
   const [backupsRes, livePaged] = await Promise.all([
     getBackups({
       licenseKey: opts.licenseKey,
+      branchId: opts.branchId,
       kind: "uzaverka",
       from,
       to,
       limit: 500,
     }),
-    fetchAllPosTransactions(
-      { licenseKey: opts.licenseKey },
-      `${from} 00:00:00`,
-      `${to} 23:59:59`,
-      { maxPages: 20 }
-    ),
+    fetchAllPosTransactions(posScope, `${from} 00:00:00`, `${to} 23:59:59`, {
+      maxPages: 20,
+    }),
   ]);
 
   const uzaIndex = indexLatestUzaverky(backupsRes.backups ?? []);
@@ -263,6 +267,8 @@ export async function buildReconcileReport(opts: {
   for (const key of keys) {
     const [branchIdStr, closeDate] = key.split("|");
     const branchId = Number(branchIdStr);
+    if (opts.branchId != null && branchId !== opts.branchId) continue;
+
     const backup = uzaIndex.get(key);
     const uzaverka = backup ? readUzaverkaTotals(backup.metadata_json) : null;
     const live = liveIndex.get(key) ?? {
@@ -428,9 +434,11 @@ export async function compareBackupsWithLive(
   return out;
 }
 
-/** UI copy: roles of the two sources. */
-export const DATA_SOURCE_ROLES_BLURB =
-  "Dnes a grafy = live transakce z pokladen. Uzávěrka = oficiální uzavření dne (archiv). Nesčítají se — kontroluje se shoda.";
+/**
+ * Internal-only helpers for live vs uzaverka totals.
+ * Do NOT surface mismatch status / “bez live” / technical hints to operators —
+ * they expect transactions as the source of truth; uzaverka is just an archive.
+ */
 
 export function paymentSplitFromTxs(txs: PosTransaction[]): { cash: number; qr: number } {
   let cash = 0;

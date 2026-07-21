@@ -203,7 +203,8 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
             Sklad
           </h2>
           <p className="text-muted-foreground">
-            Aktuální stav podle live pohybů z pokladen (ne z uzávěrek)
+            Aktuální stav skladu na prodejnách
+
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -312,7 +313,7 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
                 Stav skladu podle produktu
               </CardTitle>
               <CardDescription>
-                Poslední <span className="font-mono text-xs">stock_after</span> z live sync · poll 1 min
+                Poslední aktualizace ze skladu · obnovuje se každou minutu
                 {truncated ? " · historie zkrácena limitem API" : ""}
               </CardDescription>
             </div>
@@ -341,7 +342,7 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
             </p>
           ) : visibleLevels.length === 0 ? (
             <p className="text-sm text-muted-foreground py-10 text-center">
-              Žádná live data skladu. Pokladny musí synchronizovat pohyby do cloudu.
+              Zatím žádné údaje o skladu. Zkuste to později nebo ověřte, že pokladny běží.
             </p>
           ) : (
             <div className="rounded-lg border border-border overflow-hidden">

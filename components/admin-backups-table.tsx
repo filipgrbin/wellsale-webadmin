@@ -29,8 +29,7 @@ import { TransactionStockMovementPanel } from "@/components/transaction-stock-mo
 import { UzaverkaAnalysisPanel } from "@/components/uzaverka-analysis-panel";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
 import { resolveCashierName } from "@/lib/uzaverka-meta";
-import { compareBackupsWithLive, readUzaverkaTotals, type DayCompareResult } from "@/lib/day-reconcile";
-import { DayReconcileBadge } from "@/components/day-reconcile-badge";
+import { readUzaverkaTotals } from "@/lib/day-reconcile";
 import {
   Table,
   TableBody,
@@ -196,34 +195,6 @@ export function AdminBackupsTable() {
       b.file_name.toLowerCase().includes(search.toLowerCase()) ||
       (b.branch_name && b.branch_name.toLowerCase().includes(search.toLowerCase())) ||
       (b.license_owner && b.license_owner.toLowerCase().includes(search.toLowerCase()))
-  );
-
-  const uzaverkaIds = filtered
-    .filter((b) => b.kind === "uzaverka" || b.kind === "close")
-    .map((b) => b.id)
-    .sort((a, b) => a - b)
-    .join(",");
-
-  const { data: reconcileMap, isLoading: reconcileLoading } = useSWR(
-    uzaverkaIds ? ["admin-backup-reconcile", selectedLicense, uzaverkaIds] : null,
-    async () => {
-      const uzaverky = filtered.filter((b) => b.kind === "uzaverka" || b.kind === "close");
-      const byLic = new Map<string, Backup[]>();
-      for (const b of uzaverky) {
-        const list = byLic.get(b.license_key) ?? [];
-        list.push(b);
-        byLic.set(b.license_key, list);
-      }
-      const out = new Map<number, DayCompareResult>();
-      await Promise.all(
-        [...byLic.entries()].map(async ([key, list]) => {
-          const m = await compareBackupsWithLive(list, { licenseKey: key });
-          for (const [id, r] of m) out.set(id, r);
-        })
-      );
-      return out;
-    },
-    { revalidateOnFocus: false, dedupingInterval: 30_000 }
   );
 
   const kinds = [...new Set(backups.map((b) => b.kind))].filter(Boolean);
@@ -436,7 +407,7 @@ export function AdminBackupsTable() {
                       <TableHead>Pobocka</TableHead>
                       <TableHead>Typ</TableHead>
                       <TableHead>Verze app</TableHead>
-                      <TableHead>Tržba / shoda</TableHead>
+                      <TableHead>Tržba</TableHead>
                       <TableHead>Velikost</TableHead>
                       <TableHead>Nahrano</TableHead>
                       <TableHead className="text-right">Akce</TableHead>
@@ -484,18 +455,12 @@ export function AdminBackupsTable() {
                         </TableCell>
                         <TableCell>
                           {backup.kind === "uzaverka" || backup.kind === "close" ? (
-                            <div className="flex flex-col gap-1 items-start">
-                              <span className="text-emerald-600 font-medium tabular-nums">
-                                {(() => {
-                                  const t = readUzaverkaTotals(backup.metadata_json);
-                                  return t ? formatCurrency(t.revenue) : "—";
-                                })()}
-                              </span>
-                              <DayReconcileBadge
-                                result={reconcileMap?.get(backup.id)}
-                                loading={reconcileLoading}
-                              />
-                            </div>
+                            <span className="text-emerald-600 font-medium tabular-nums">
+                              {(() => {
+                                const t = readUzaverkaTotals(backup.metadata_json);
+                                return t ? formatCurrency(t.revenue) : "—";
+                              })()}
+                            </span>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}

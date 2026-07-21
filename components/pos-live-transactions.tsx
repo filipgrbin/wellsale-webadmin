@@ -10,7 +10,6 @@ import {
   type PosTransaction,
 } from "@/lib/api";
 import {
-  dayWallClockBounds,
   fetchAllPosTransactions,
   fetchOlderPosTransactions,
   filterTxByBranches,
@@ -19,17 +18,19 @@ import {
   formatTxTime,
   itemsSummary,
   mergeTransactions,
+  rangeToWallClock,
   sortTxNewestFirst,
   sumTxRevenue,
   txKey,
 } from "@/lib/pos-transactions";
-import { pragueDate } from "@/lib/turnover-utils";
+import { pragueDate, type RangePreset } from "@/lib/turnover-utils";
 import { summarizeCapability } from "@/lib/app-capabilities";
 import { AppCapabilityNotice } from "@/components/app-capability-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -56,19 +57,42 @@ import { cn } from "@/lib/utils";
 const PREVIEW_COUNT = 5;
 const POLL_MS = 60_000;
 
+const PRESET_LABEL: Record<RangePreset, string> = {
+  today: "Dnes",
+  week: "Poslední týden",
+  month: "Poslední měsíc",
+  custom: "Vlastní období",
+};
+
+export interface PosRangeValue {
+  preset: RangePreset;
+  customFrom: string;
+  customTo: string;
+}
+
 interface PosLiveTransactionsProps {
   /** Subadmin: locked license. Mainadmin: optional; must select if omitted. */
   licenseKey?: string;
   /** When false, show license picker (mainadmin). */
   lockLicense?: boolean;
+  /** Controlled period (shared with chart below). */
+  range?: PosRangeValue;
+  onRangeChange?: (next: PosRangeValue) => void;
 }
 
 export function PosLiveTransactions({
   licenseKey: fixedLicenseKey,
   lockLicense = Boolean(fixedLicenseKey),
+  range: controlledRange,
+  onRangeChange,
 }: PosLiveTransactionsProps) {
   const today = pragueDate(new Date());
   const [licenseFilter, setLicenseFilter] = useState<string>(fixedLicenseKey || "");
+  const [internalRange, setInternalRange] = useState<PosRangeValue>({
+    preset: "today",
+    customFrom: today,
+    customTo: today,
+  });
   const [allBranches, setAllBranches] = useState(true);
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState(false);
@@ -81,16 +105,27 @@ export function PosLiveTransactions({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const nextSinceRef = useRef<string | null>(null);
 
+  const range = controlledRange ?? internalRange;
+  const setRange = (next: PosRangeValue) => {
+    if (onRangeChange) onRangeChange(next);
+    if (!controlledRange) setInternalRange(next);
+  };
+
+  const { preset: rangePreset, customFrom, customTo } = range;
+  const { from: wallFrom, to: wallTo, dayFrom, dayTo } = rangeToWallClock(
+    rangePreset,
+    customFrom,
+    customTo
+  );
+  const isSingleToday = dayFrom === dayTo && dayFrom === today;
+
   useEffect(() => {
     nextSinceRef.current = nextSince;
   }, [nextSince]);
 
   const effectiveLicense = fixedLicenseKey || (licenseFilter || undefined);
 
-  const { data: licensesData } = useSWR(
-    lockLicense ? null : "licenses",
-    getLicenses
-  );
+  const { data: licensesData } = useSWR(lockLicense ? null : "licenses", getLicenses);
   const { data: branchesData } = useSWR(
     effectiveLicense ? ["pos-live-branches", effectiveLicense] : null,
     () => getBranches(effectiveLicense)
@@ -128,7 +163,7 @@ export function PosLiveTransactions({
     return list;
   }, [txs, activeBranchIds]);
 
-  const todaySummary = useMemo(() => sumTxRevenue(visibleTxs), [visibleTxs]);
+  const periodSummary = useMemo(() => sumTxRevenue(visibleTxs), [visibleTxs]);
 
   const shown = expanded ? visibleTxs : visibleTxs.slice(0, PREVIEW_COUNT);
   const hiddenCount = Math.max(0, visibleTxs.length - PREVIEW_COUNT);
@@ -139,48 +174,62 @@ export function PosLiveTransactions({
     return m;
   }, [availableBranches]);
 
-  const loadDay = useCallback(async () => {
+  const inRangeFilter = useCallback(
+    (t: PosTransaction) => {
+      const created = String(t.created_at || "");
+      return created >= wallFrom && created <= wallTo;
+    },
+    [wallFrom, wallTo]
+  );
+
+  const loadRange = useCallback(async () => {
     if (!scope) return;
     setLoading(true);
     setError(null);
     try {
-      const { from, to } = dayWallClockBounds(today);
-      // Prefer day= for single day; also works with from/to
-      const res = await getPosTransactions({
-        ...scope,
-        day: today,
-        limit: 1000,
-      });
-      let list = (res.transactions || []).filter((t) => !t.deleted_at);
-      // If day= returned empty but we might need from/to fallback
-      if (list.length === 0) {
-        const paged = await fetchAllPosTransactions(scope, from, to, { maxPages: 5 });
-        list = paged.transactions;
-        setNextSince(paged.nextSince);
+      if (isSingleToday) {
+        const res = await getPosTransactions({
+          ...scope,
+          day: today,
+          limit: 1000,
+        });
+        let list = (res.transactions || []).filter((t) => !t.deleted_at);
+        if (list.length === 0) {
+          const paged = await fetchAllPosTransactions(scope, wallFrom, wallTo, { maxPages: 5 });
+          list = paged.transactions;
+          setNextSince(paged.nextSince);
+        } else {
+          setNextSince(res.nextSince);
+        }
+        setTxs(list.sort(sortTxNewestFirst));
+        setHasMoreOlder(list.length >= 1000);
       } else {
-        setNextSince(res.nextSince);
+        const paged = await fetchAllPosTransactions(scope, wallFrom, wallTo, {
+          maxPages: 25,
+        });
+        setTxs(paged.transactions.sort(sortTxNewestFirst));
+        setNextSince(paged.nextSince);
+        setHasMoreOlder(false);
       }
-      setTxs(list.sort(sortTxNewestFirst));
-      setHasMoreOlder(list.length >= 1000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Nepodařilo se načíst transakce");
       setTxs([]);
     } finally {
       setLoading(false);
     }
-  }, [scope, today]);
+  }, [scope, isSingleToday, today, wallFrom, wallTo]);
 
   useEffect(() => {
     setTxs([]);
     setNextSince(null);
     setExpanded(false);
-    setHasMoreOlder(true);
-    if (scope) void loadDay();
-  }, [scope, loadDay]);
+    setHasMoreOlder(isSingleToday);
+    if (scope) void loadRange();
+  }, [scope, loadRange, isSingleToday]);
 
-  // Poll for new / updated rows
+  // Poll only for „dnes“ so new sales appear without refresh
   useEffect(() => {
-    if (!scope) return;
+    if (!scope || !isSingleToday) return;
 
     const tick = async () => {
       const since = nextSinceRef.current;
@@ -196,10 +245,7 @@ export function PosLiveTransactions({
         if (incoming.length === 0) return;
         setTxs((prev) => {
           const merged = mergeTransactions(prev, incoming);
-          return merged.filter((t) => {
-            const d = String(t.created_at || "").slice(0, 10);
-            return d === today || String(t.created_at || "").startsWith(today);
-          });
+          return merged.filter(inRangeFilter);
         });
       } catch {
         // ignore poll errors
@@ -210,10 +256,10 @@ export function PosLiveTransactions({
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [scope, today]);
+  }, [scope, isSingleToday, inRangeFilter]);
 
   const loadMoreOlder = async () => {
-    if (!scope || visibleTxs.length === 0) return;
+    if (!scope || !isSingleToday || visibleTxs.length === 0) return;
     setLoadingMore(true);
     try {
       const oldest = visibleTxs[visibleTxs.length - 1];
@@ -251,15 +297,25 @@ export function PosLiveTransactions({
       ? "Vyberte prodejny"
       : `${selectedBranchIds.size} prodejen`;
 
+  const periodHeadline =
+    dayFrom === dayTo
+      ? dayFrom === today
+        ? "Dnešní tržby"
+        : `Tržby · ${dayFrom}`
+      : `Tržby · ${dayFrom} – ${dayTo}`;
+
+  const earnedLabel =
+    isSingleToday ? "Vyděláno dnes" : `Tržby · ${PRESET_LABEL[rangePreset].toLowerCase()}`;
+
   if (!lockLicense && !effectiveLicense) {
     return (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Receipt className="h-4 w-4" />
-            Dnešní prodeje
+            Prodeje
           </CardTitle>
-          <CardDescription>Vyberte licenci pro live transakce</CardDescription>
+          <CardDescription>Nejdřív vyberte licenci</CardDescription>
         </CardHeader>
         <CardContent>
           <Select value={licenseFilter || undefined} onValueChange={setLicenseFilter}>
@@ -286,14 +342,11 @@ export function PosLiveTransactions({
           <div>
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
-              Dnešní tržby
+              {periodHeadline}
             </CardTitle>
             <CardDescription>
-              Live prodeje z pokladen · {today}
+              Prodeje z pokladen — vyberte období a prodejny
             </CardDescription>
-            <p className="text-xs text-muted-foreground mt-1">
-              Zdroj: live sync (ne uzávěrka). Uzávěrka = oficiální uzavření dne.
-            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             {!lockLicense && (
@@ -357,34 +410,83 @@ export function PosLiveTransactions({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {(["today", "week", "month", "custom"] as RangePreset[]).map((p) => (
+            <Button
+              key={p}
+              variant={rangePreset === p ? "default" : "outline"}
+              size="sm"
+              onClick={() => setRange({ ...range, preset: p })}
+            >
+              {PRESET_LABEL[p]}
+            </Button>
+          ))}
+        </div>
+
+        {rangePreset === "custom" && (
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="pos-from-date" className="text-xs">
+                Od
+              </Label>
+              <Input
+                id="pos-from-date"
+                type="date"
+                value={customFrom}
+                max={customTo}
+                onChange={(e) =>
+                  setRange({ ...range, customFrom: e.target.value, preset: "custom" })
+                }
+                className="w-[160px]"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="pos-to-date" className="text-xs">
+                Do
+              </Label>
+              <Input
+                id="pos-to-date"
+                type="date"
+                value={customTo}
+                min={customFrom}
+                max={today}
+                onChange={(e) =>
+                  setRange({ ...range, customTo: e.target.value, preset: "custom" })
+                }
+                className="w-[160px]"
+              />
+            </div>
+          </div>
+        )}
+
         <AppCapabilityNotice notice={liveCap.notice} />
+
         <div className="flex flex-wrap items-end gap-6">
           <div>
-            <p className="text-sm text-muted-foreground">Vyděláno dnes</p>
+            <p className="text-sm text-muted-foreground">{earnedLabel}</p>
             <p className="text-3xl font-bold tabular-nums text-emerald-600">
-              {loading && txs.length === 0 ? "…" : formatCurrency(todaySummary.revenue)}
+              {loading && txs.length === 0 ? "…" : formatCurrency(periodSummary.revenue)}
             </p>
           </div>
           <div className="text-sm text-muted-foreground space-y-0.5">
             <p>
-              Hotovost {formatCurrency(todaySummary.cash)} · QR {formatCurrency(todaySummary.qr)}
+              Hotovost {formatCurrency(periodSummary.cash)} · QR{" "}
+              {formatCurrency(periodSummary.qr)}
             </p>
             <p>
-              {todaySummary.txCount}{" "}
-              {todaySummary.txCount === 1
+              {periodSummary.txCount}{" "}
+              {periodSummary.txCount === 1
                 ? "transakce"
-                : todaySummary.txCount >= 2 && todaySummary.txCount <= 4
+                : periodSummary.txCount >= 2 && periodSummary.txCount <= 4
                   ? "transakce"
                   : "transakcí"}{" "}
-              · {todaySummary.branches.size}{" "}
-              {todaySummary.branches.size === 1 ? "prodejna" : "prodejen"}
+              · {periodSummary.branches.size}{" "}
+              {periodSummary.branches.size === 1 ? "prodejna" : "prodejen"}
             </p>
           </div>
         </div>
 
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         {!allBranches && selectedBranchIds.size === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center">
@@ -393,18 +495,18 @@ export function PosLiveTransactions({
         ) : loading && txs.length === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center flex items-center justify-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Načítám dnešní transakce…
+            Načítám transakce…
           </p>
         ) : visibleTxs.length === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center">
-            Dnes zatím žádné transakce
+            V tomto období zatím žádné transakce
           </p>
         ) : (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium flex items-center gap-2">
                 <Receipt className="h-4 w-4" />
-                Poslední transakce
+                Transakce
                 <Badge variant="secondary" className="tabular-nums">
                   {visibleTxs.length}
                 </Badge>
@@ -442,7 +544,9 @@ export function PosLiveTransactions({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium tabular-nums">{formatTxTime(tx.created_at)}</span>
+                        <span className="font-medium tabular-nums">
+                          {formatTxTime(tx.created_at)}
+                        </span>
                         <Badge variant="outline" className="text-[10px] font-normal">
                           {branch?.code || `#${tx.branch_id}`}
                         </Badge>
@@ -450,7 +554,10 @@ export function PosLiveTransactions({
                           {formatPaymentLabel(tx.payment_method)}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5" title={itemsSummary(tx, 8)}>
+                      <p
+                        className="text-xs text-muted-foreground truncate mt-0.5"
+                        title={itemsSummary(tx, 8)}
+                      >
                         {itemsSummary(tx)}
                       </p>
                     </div>
@@ -462,7 +569,7 @@ export function PosLiveTransactions({
               })}
             </ul>
 
-            {expanded && (
+            {expanded && isSingleToday && (
               <div className="flex justify-center pt-1">
                 <Button
                   variant="outline"

@@ -12,9 +12,10 @@ Branches may run older WellSale POS builds. Webadmin must not hard-require field
 
 1. Before wiring a feature that depends on new POS behaviour, add/update an entry in `lib/app-capabilities.ts` with `minVersion`.
 2. Gate UI with `branchSupports` / `summarizeCapability` and show `AppCapabilityNotice` when some branches are outdated.
-3. Prefer empty states + soft notices over throwing or blocking the whole page when live/sync data is missing.
-4. Never treat missing optional metadata (`cash_total`, `stock_after`, live TX, etc.) as a fatal error — fall back or show "—".
+3. Prefer empty states + soft notices over throwing or blocking the whole page when data is missing.
+4. Never treat missing optional metadata as a fatal error — fall back or show "—".
 5. Subadmin must not resolve faults (`BranchFaults` `canResolve` only for mainadmin).
+6. Subadmin copy must stay extremely user-friendly — no technical jargon (`close_date`, “live”, “bez live”, API field names). Transactions are the source of truth; never show match/mismatch badges to operators (`lib/day-reconcile.ts` is internal-only).
 
 ## Current gated features
 

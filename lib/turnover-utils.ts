@@ -179,10 +179,18 @@ export function getEffectiveDateRange(
   switch (preset) {
     case "today":
       return { from: today, to: today };
-    case "week":
-      return { from: weekStartKey(today), to: today };
-    case "month":
-      return { from: `${today.slice(0, 7)}-01`, to: today };
+    case "week": {
+      // Rolling last 7 calendar days including today
+      const d = new Date(today + "T12:00:00");
+      d.setDate(d.getDate() - 6);
+      return { from: pragueDate(d), to: today };
+    }
+    case "month": {
+      // Rolling last 30 calendar days including today
+      const d = new Date(today + "T12:00:00");
+      d.setDate(d.getDate() - 29);
+      return { from: pragueDate(d), to: today };
+    }
     case "custom":
       return {
         from: customFrom || today,

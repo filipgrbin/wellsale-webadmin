@@ -1,13 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import { getBranches, getBackupsStats, getMachines } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, Database, Monitor, HardDrive } from "lucide-react";
-import { PosLiveTransactions } from "@/components/pos-live-transactions";
+import {
+  PosLiveTransactions,
+  type PosRangeValue,
+} from "@/components/pos-live-transactions";
 import { TurnoverCharts } from "@/components/turnover-charts";
 import { DayReconcilePanel } from "@/components/day-reconcile-panel";
-import { DATA_SOURCE_ROLES_BLURB } from "@/lib/day-reconcile";
+import { pragueDate } from "@/lib/turnover-utils";
 
 interface SubadminStatsProps {
   licenseKey: string;
@@ -22,6 +26,13 @@ function formatBytes(bytes: number): string {
 }
 
 export function SubadminStats({ licenseKey }: SubadminStatsProps) {
+  const today = pragueDate(new Date());
+  const [range, setRange] = useState<PosRangeValue>({
+    preset: "today",
+    customFrom: today,
+    customTo: today,
+  });
+
   const { data: branchesData } = useSWR(
     ["subadmin-branches", licenseKey],
     () => getBranches(licenseKey)
@@ -45,15 +56,27 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground border border-border rounded-lg bg-card px-4 py-3">
-        {DATA_SOURCE_ROLES_BLURB}
-      </p>
+      <PosLiveTransactions
+        licenseKey={licenseKey}
+        lockLicense
+        range={range}
+        onRangeChange={setRange}
+      />
 
-      <PosLiveTransactions licenseKey={licenseKey} lockLicense />
-
-      <DayReconcilePanel licenseKey={licenseKey} days={7} />
-
-      <TurnoverCharts licenseKey={licenseKey} />
+      <TurnoverCharts
+        licenseKey={licenseKey}
+        rangePreset={range.preset}
+        customFrom={range.customFrom}
+        customTo={range.customTo}
+        onRangeChange={(next) =>
+          setRange({
+            preset: next.preset,
+            customFrom: next.customFrom,
+            customTo: next.customTo,
+          })
+        }
+        hideRangeControls
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border bg-card">
@@ -162,6 +185,8 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
           </CardContent>
         </Card>
       )}
+
+      <DayReconcilePanel licenseKey={licenseKey} days={7} variant="operator" />
     </div>
   );
 }

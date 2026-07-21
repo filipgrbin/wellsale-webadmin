@@ -1,57 +1,63 @@
 "use client";
 
 import useSWR from "swr";
-import { buildReconcileReport, DATA_SOURCE_ROLES_BLURB } from "@/lib/day-reconcile";
+import { buildReconcileReport } from "@/lib/day-reconcile";
 import { formatCurrency } from "@/lib/turnover-utils";
-import { summarizeCapability } from "@/lib/app-capabilities";
 import { DayReconcileBadge } from "@/components/day-reconcile-badge";
-import { AppCapabilityNotice } from "@/components/app-capability-notice";
-import { getBranches } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Scale, Loader2 } from "lucide-react";
 
 interface DayReconcilePanelProps {
   licenseKey: string;
+  /** When set, only this branch (mainadmin branch detail). */
+  branchId?: number;
   days?: number;
+  /** Softer copy for subadmin; mainadmin gets diagnostic wording. */
+  variant?: "operator" | "admin";
 }
 
-export function DayReconcilePanel({ licenseKey, days = 7 }: DayReconcilePanelProps) {
-  const { data: branchesData } = useSWR(
-    ["day-reconcile-branches", licenseKey],
-    () => getBranches(licenseKey)
-  );
-  const liveCap = summarizeCapability(
-    (branchesData?.branches ?? []).filter((b) => !b.archived_at),
-    "livePosSync"
-  );
-
+export function DayReconcilePanel({
+  licenseKey,
+  branchId,
+  days = 7,
+  variant = "admin",
+}: DayReconcilePanelProps) {
   const { data, error, isLoading } = useSWR(
-    ["day-reconcile-report", licenseKey, days],
-    () => buildReconcileReport({ licenseKey, days }),
+    ["day-reconcile-report", licenseKey, branchId ?? "all", days],
+    () => buildReconcileReport({ licenseKey, days, branchId }),
     { revalidateOnFocus: false, dedupingInterval: 60_000 }
   );
 
   const problemRows =
-    data?.results.filter((r) =>
-      r.status === "error" || r.status === "warning" || r.status === "no_live"
+    data?.results.filter(
+      (r) => r.status === "error" || r.status === "warning" || r.status === "no_live"
     ) ?? [];
 
+  const title =
+    variant === "operator"
+      ? `Kontrola uzávěrek · posledních ${days} dní`
+      : `Shoda prodejů × uzávěrek · ${days} dní`;
+
+  const description =
+    variant === "operator"
+      ? "Technická kontrola na spodku stránky — běžný provoz řešte v transakcích výše."
+      : "Porovnání součů prodejů s nahranými uzávěrkami (pro diagnostiku).";
+
   return (
-    <Card>
+    <Card className="border-border bg-card">
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <Scale className="h-4 w-4" />
-          Kontrola shody · posledních {days} dní
+          {title}
         </CardTitle>
-        <CardDescription>{DATA_SOURCE_ROLES_BLURB}</CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <AppCapabilityNotice notice={liveCap.notice} />
         {isLoading && (
           <p className="text-sm text-muted-foreground flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Porovnávám live transakce s uzávěrkami…
+            Kontroluji shodu…
           </p>
         )}
 
@@ -63,62 +69,74 @@ export function DayReconcilePanel({ licenseKey, days = 7 }: DayReconcilePanelPro
 
         {data && !isLoading && (
           <>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="border-emerald-500/40 text-emerald-700">
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-700 dark:text-emerald-400">
                 OK {data.okCount}
               </Badge>
-              <Badge variant="outline" className="border-amber-500/40 text-amber-700">
+              <Badge variant="outline" className="border-amber-500/40 text-amber-800 dark:text-amber-400">
                 Varování {data.warningCount}
               </Badge>
-              <Badge variant="outline" className="border-red-500/40 text-red-700">
-                Neshody {data.errorCount}
+              <Badge variant="outline" className="border-red-500/40 text-red-700 dark:text-red-400">
+                Neshoda {data.errorCount}
               </Badge>
-              <Badge variant="outline" className="border-sky-500/40 text-sky-700">
-                Bez live {data.noLiveCount}
+              <Badge variant="outline" className="border-sky-500/40 text-sky-800 dark:text-sky-400">
+                Chybí prodeje {data.noLiveCount}
               </Badge>
             </div>
 
             {problemRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Žádné neshody mezi live a uzávěrkami v období {data.from} – {data.to}.
+                Žádné neshody v období {data.from} – {data.to}.
               </p>
             ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
-                <div className="max-h-64 overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/50 sticky top-0 text-xs text-muted-foreground text-left">
-                      <tr>
-                        <th className="px-3 py-2 font-medium">Den</th>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
+                      <th className="px-3 py-2 font-medium">Datum</th>
+                      {!branchId && (
                         <th className="px-3 py-2 font-medium">Prodejna</th>
-                        <th className="px-3 py-2 font-medium text-right">Uzávěrka</th>
-                        <th className="px-3 py-2 font-medium text-right">Live</th>
-                        <th className="px-3 py-2 font-medium">Stav</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {problemRows.map((r) => (
-                        <tr key={`${r.branchId}|${r.closeDate}|${r.backupId ?? 0}`}>
-                          <td className="px-3 py-2 font-mono text-xs">{r.closeDate}</td>
+                      )}
+                      <th className="px-3 py-2 font-medium text-right">Prodeje</th>
+                      <th className="px-3 py-2 font-medium text-right">Uzávěrka</th>
+                      <th className="px-3 py-2 font-medium">Stav</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {problemRows.map((r) => (
+                      <tr
+                        key={`${r.branchId}-${r.closeDate}`}
+                        className="border-b border-border last:border-0"
+                      >
+                        <td className="px-3 py-2 tabular-nums">{r.closeDate}</td>
+                        {!branchId && (
                           <td className="px-3 py-2">
-                            {r.branchCode || r.branchName || `#${r.branchId}`}
+                            <span className="font-medium">{r.branchCode || `#${r.branchId}`}</span>
+                            {r.branchName && (
+                              <span className="text-muted-foreground"> · {r.branchName}</span>
+                            )}
                           </td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            {r.uzaverka ? formatCurrency(r.uzaverka.revenue) : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            {formatCurrency(r.live.revenue)}
-                          </td>
-                          <td className="px-3 py-2">
+                        )}
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatCurrency(r.live.revenue)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {r.uzaverka ? formatCurrency(r.uzaverka.revenue) : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-col gap-0.5 items-start">
                             <DayReconcileBadge result={r} />
-                            <p className="text-[11px] text-muted-foreground mt-0.5 max-w-[220px]">
-                              {r.hint}
-                            </p>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                            {r.hint && (
+                              <span className="text-[10px] text-muted-foreground max-w-[220px]">
+                                {r.hint}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </>

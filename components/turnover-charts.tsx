@@ -54,6 +54,17 @@ const EMERALD_DARK = "#059669";
 
 interface TurnoverChartsProps {
   licenseKey?: string;
+  /** Controlled period (shared with transaction list above). */
+  rangePreset?: RangePreset;
+  customFrom?: string;
+  customTo?: string;
+  onRangeChange?: (next: {
+    preset: RangePreset;
+    customFrom: string;
+    customTo: string;
+  }) => void;
+  /** When true, period buttons live on the sibling transaction card. */
+  hideRangeControls?: boolean;
 }
 
 function StackedBranchTooltip({
@@ -132,17 +143,52 @@ function SimpleTooltip({
   );
 }
 
-export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsProps) {
+export function TurnoverCharts({
+  licenseKey: fixedLicenseKey,
+  rangePreset: controlledPreset,
+  customFrom: controlledFrom,
+  customTo: controlledTo,
+  onRangeChange,
+  hideRangeControls = false,
+}: TurnoverChartsProps) {
   const isSubadmin = Boolean(fixedLicenseKey);
   const today = pragueDate(new Date());
 
   const [licenseFilter, setLicenseFilter] = useState<string>(fixedLicenseKey || "");
-  const [rangePreset, setRangePreset] = useState<RangePreset>("week");
-  const [customFrom, setCustomFrom] = useState(today);
-  const [customTo, setCustomTo] = useState(today);
+  const [internalPreset, setInternalPreset] = useState<RangePreset>("week");
+  const [internalFrom, setInternalFrom] = useState(today);
+  const [internalTo, setInternalTo] = useState(today);
   const [granularity, setGranularity] = useState<ChartGranularity>("day");
   const [allBranches, setAllBranches] = useState(true);
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<number>>(new Set());
+
+  const rangePreset = controlledPreset ?? internalPreset;
+  const customFrom = controlledFrom ?? internalFrom;
+  const customTo = controlledTo ?? internalTo;
+
+  const setRangePreset = (preset: RangePreset) => {
+    if (onRangeChange) {
+      onRangeChange({ preset, customFrom, customTo });
+    } else {
+      setInternalPreset(preset);
+    }
+  };
+  const setCustomFrom = (v: string) => {
+    if (onRangeChange) {
+      onRangeChange({ preset: "custom", customFrom: v, customTo });
+    } else {
+      setInternalFrom(v);
+      setInternalPreset("custom");
+    }
+  };
+  const setCustomTo = (v: string) => {
+    if (onRangeChange) {
+      onRangeChange({ preset: "custom", customFrom, customTo: v });
+    } else {
+      setInternalTo(v);
+      setInternalPreset("custom");
+    }
+  };
 
   const effectiveLicense = fixedLicenseKey || (licenseFilter || undefined);
 
@@ -289,9 +335,9 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
 
   const presetLabel: Record<RangePreset, string> = {
     today: "Dnes",
-    week: "Tento týden",
-    month: "Tento měsíc",
-    custom: "Vlastní rozsah",
+    week: "Poslední týden",
+    month: "Poslední měsíc",
+    custom: "Vlastní období",
   };
 
   if (!isSubadmin && !effectiveLicense) {
@@ -303,7 +349,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
             Analýza tržeb
           </h3>
           <p className="text-sm text-muted-foreground">
-            Vyberte licenci — live data z pokladen vyžadují licenseKey
+            Vyberte licenci pro přehled tržeb
           </p>
         </div>
         <Select value={licenseFilter || undefined} onValueChange={setLicenseFilter}>
@@ -333,8 +379,8 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           </h3>
           <p className="text-sm text-muted-foreground">
             {isSubadmin
-              ? "Live transakce z pokladen — intradenní, denní a měsíční přehled (ne z uzávěrek)"
-              : "Live agregace transakcí podle licence a prodejen (ne z uzávěrek)"}
+              ? "Graf a metriky podle zvoleného období výše"
+              : "Přehled tržeb podle licence a prodejen"}
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -398,49 +444,53 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {(["today", "week", "month", "custom"] as RangePreset[]).map((p) => (
-          <Button
-            key={p}
-            variant={rangePreset === p ? "default" : "outline"}
-            size="sm"
-            onClick={() => setRangePreset(p)}
-          >
-            {presetLabel[p]}
-          </Button>
-        ))}
-      </div>
+      {!hideRangeControls && (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {(["today", "week", "month", "custom"] as RangePreset[]).map((p) => (
+              <Button
+                key={p}
+                variant={rangePreset === p ? "default" : "outline"}
+                size="sm"
+                onClick={() => setRangePreset(p)}
+              >
+                {presetLabel[p]}
+              </Button>
+            ))}
+          </div>
 
-      {rangePreset === "custom" && (
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="from-date" className="text-xs">
-              Od
-            </Label>
-            <Input
-              id="from-date"
-              type="date"
-              value={customFrom}
-              max={customTo}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              className="w-[160px]"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="to-date" className="text-xs">
-              Do
-            </Label>
-            <Input
-              id="to-date"
-              type="date"
-              value={customTo}
-              min={customFrom}
-              max={today}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="w-[160px]"
-            />
-          </div>
-        </div>
+          {rangePreset === "custom" && (
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="from-date" className="text-xs">
+                  Od
+                </Label>
+                <Input
+                  id="from-date"
+                  type="date"
+                  value={customFrom}
+                  max={customTo}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="w-[160px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="to-date" className="text-xs">
+                  Do
+                </Label>
+                <Input
+                  id="to-date"
+                  type="date"
+                  value={customTo}
+                  min={customFrom}
+                  max={today}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="w-[160px]"
+                />
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -535,12 +585,12 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           </CardTitle>
           <CardDescription>
             {chartLoading
-              ? "Načítání transakcí z pokladen…"
+              ? "Načítám tržby…"
               : granularity === "hour"
-                ? "Tržby podle času jednotlivých prodejů (live)"
+                ? "Tržby podle hodin v daném dni"
                 : allBranches && chartOutput.stacked
-                  ? "Skládaný sloupec = prodejny v daném období"
-                  : "Tržby z live transakcí ve zvoleném rozsahu"}
+                  ? "Každá barva = jedna prodejna"
+                  : "Tržby ve zvoleném období"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -550,10 +600,10 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
           >
             <TabsList className="mb-4">
               <TabsTrigger value="hour" disabled={!canUseHourly}>
-                Intradenní
+                Po hodinách
               </TabsTrigger>
-              <TabsTrigger value="day">Denní</TabsTrigger>
-              <TabsTrigger value="month">Měsíční</TabsTrigger>
+              <TabsTrigger value="day">Po dnech</TabsTrigger>
+              <TabsTrigger value="month">Po měsících</TabsTrigger>
             </TabsList>
 
             {(["hour", "day", "month"] as ChartGranularity[]).map((g) => (
@@ -652,7 +702,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
 
           {!canUseHourly && (
             <p className={cn("text-xs text-muted-foreground mt-2")}>
-              Intradenní přehled je dostupný jen pro rozsah jednoho dne (např. „Dnes“ nebo vlastní od–do stejný den).
+              Po hodinách je dostupný jen pro jeden den (např. „Dnes“ nebo vlastní od–do stejný den).
             </p>
           )}
         </CardContent>
@@ -661,7 +711,7 @@ export function TurnoverCharts({ licenseKey: fixedLicenseKey }: TurnoverChartsPr
       <TurnoverInsightsPanel
         insights={periodInsights}
         productLimit={30}
-        description={`Metriky z období ${from === to ? from : `${from} – ${to}`} · produkty z live transakcí`}
+        description={`Metriky z období ${from === to ? from : `${from} – ${to}`}`}
       />
     </div>
   );

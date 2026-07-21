@@ -50,6 +50,8 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
 import { BranchFaults } from "@/components/branch-faults";
+import { DayReconcilePanel } from "@/components/day-reconcile-panel";
+
 import { BackupDownloadDialog } from "@/components/backup-download-dialog";
 import { BranchAppVersion } from "@/components/branch-app-version";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
@@ -366,6 +368,13 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
       </Card>
 
       <BranchFaults licenseKey={branch.license_key} branchId={branch.id} canResolve />
+
+      <DayReconcilePanel
+        licenseKey={branch.license_key}
+        branchId={branch.id}
+        days={7}
+        variant="admin"
+      />
 
       <BackupDownloadDialog
         backup={downloadChoice}

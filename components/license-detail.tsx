@@ -27,6 +27,7 @@ import { cs } from "date-fns/locale";
 import { BranchesTable } from "./branches-table";
 import { MachinesTable } from "./machines-table";
 import { AdminBranchDetail } from "./admin-branch-detail";
+import { DayReconcilePanel } from "@/components/day-reconcile-panel";
 
 function formatDate(date: string | null) {
   if (!date) return "—";
@@ -268,6 +269,12 @@ export function LicenseDetail({ license, onBack }: LicenseDetailProps) {
           </CardContent>
         </Tabs>
       </Card>
+
+      <DayReconcilePanel
+        licenseKey={license.license_key}
+        days={7}
+        variant="admin"
+      />
     </div>
   );
 }

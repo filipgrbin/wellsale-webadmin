@@ -31,8 +31,6 @@ import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
 import { TransactionStockMovementPanel } from "@/components/transaction-stock-movement-panel";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
 import { hasTillData, resolveCashierName } from "@/lib/uzaverka-meta";
-import { compareBackupsWithLive } from "@/lib/day-reconcile";
-import { DayReconcileBadge } from "@/components/day-reconcile-badge";
 
 interface SubadminSession {
   licenseKey: string;
@@ -203,20 +201,6 @@ export default function BranchDetailPage() {
     if (!backupsData?.backups) return [];
     return backupsData.backups.filter(b => b.kind === "uzaverka" || b.kind === "close");
   }, [backupsData?.backups]);
-
-  const { data: reconcileMap, isLoading: reconcileLoading } = useSWR(
-    session && uzaverkyBackups.length > 0
-      ? [
-          "branch-uzaverka-reconcile",
-          branchId,
-          session.licenseKey,
-          uzaverkyBackups.map((b) => b.id).sort((a, b) => a - b).join(","),
-        ]
-      : null,
-    () =>
-      compareBackupsWithLive(uzaverkyBackups, { licenseKey: session!.licenseKey }),
-    { revalidateOnFocus: false, dedupingInterval: 30_000 }
-  );
 
   // Other backups (not uzaverka)
   const otherBackups = useMemo(() => {
@@ -426,7 +410,7 @@ export default function BranchDetailPage() {
                       <TableHead>Datum uzávěrky</TableHead>
                       <TableHead>Verze app</TableHead>
                       <TableHead>Pokladní</TableHead>
-                      <TableHead>Tržba / shoda</TableHead>
+                      <TableHead>Tržba</TableHead>
                       <TableHead>Zisk</TableHead>
                       <TableHead>Nahráno</TableHead>
                       <TableHead>Velikost</TableHead>
@@ -458,15 +442,9 @@ export default function BranchDetailPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="flex flex-col gap-1 items-start">
-                              <span className="font-medium text-green-500 tabular-nums">
-                                {meta.total_revenue != null ? formatCurrency(Number(meta.total_revenue)) : "—"}
-                              </span>
-                              <DayReconcileBadge
-                                result={reconcileMap?.get(backup.id)}
-                                loading={reconcileLoading}
-                              />
-                            </div>
+                            <span className="font-medium text-green-500 tabular-nums">
+                              {meta.total_revenue != null ? formatCurrency(Number(meta.total_revenue)) : "—"}
+                            </span>
                           </TableCell>
                           <TableCell className="font-medium text-emerald-500">
                             {Number.isFinite(rz) ? formatCurrency(rz) : "—"}

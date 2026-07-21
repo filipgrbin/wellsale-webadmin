@@ -12,6 +12,7 @@ import {
   monthLabel,
   monthsInRange,
   normalizeCloseDate,
+  pragueDate,
   type ChartBucket,
   type ChartGranularity,
   type ClosureRecord,
@@ -283,18 +284,28 @@ export function posTxsToDayRecords(txs: PosTransaction[]): ClosureRecord[] {
 
 export function formatTxTime(createdAt: string): string {
   const s = String(createdAt || "").trim();
-  // "2026-07-21 14:32:01" or ISO
-  const m = s.match(/(\d{2}):(\d{2})/);
-  if (m) return `${m[1]}:${m[2]}`;
-  try {
-    return new Intl.DateTimeFormat("cs-CZ", {
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: "Europe/Prague",
-    }).format(new Date(s));
-  } catch {
-    return s.slice(11, 16) || s;
+  const day = s.slice(0, 10);
+  const today = pragueDate(new Date());
+  const timeMatch = s.match(/(\d{2}):(\d{2})/);
+  const time = timeMatch
+    ? `${timeMatch[1]}:${timeMatch[2]}`
+    : (() => {
+        try {
+          return new Intl.DateTimeFormat("cs-CZ", {
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZone: "Europe/Prague",
+          }).format(new Date(s));
+        } catch {
+          return s.slice(11, 16) || s;
+        }
+      })();
+
+  if (day && day !== today && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    const [, m, d] = day.split("-");
+    return `${Number(d)}.${Number(m)}. ${time}`;
   }
+  return time;
 }
 
 export function itemsSummary(tx: PosTransaction, max = 3): string {
