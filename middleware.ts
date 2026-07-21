@@ -23,6 +23,7 @@ export function middleware(request: NextRequest) {
     pathname === "/api/admin/backups/decrypt" ||
     pathname === "/api/admin/backups/intraday" ||
     pathname === "/api/admin/backups/download" ||
+    pathname === "/api/admin/releases/download" ||
     pathname.startsWith("/api/admin/pos/") ||
     pathname === "/api/signature/verify"
   ) {

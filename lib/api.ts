@@ -691,6 +691,28 @@ export async function deleteRelease(data: {
 }
 
 /**
+ * Presigned URL for a release artifact (Setup.exe).
+ * Backend: POST /api/admin/releases/download-url
+ * Body: { id } or { version }; optional fileName.
+ */
+export async function getReleaseDownloadUrl(data: {
+  id?: number;
+  version?: string;
+  fileName?: string;
+}): Promise<{
+  ok: boolean;
+  downloadUrl: string;
+  fileName?: string;
+  version?: string;
+  contentType?: string;
+}> {
+  return apiRequest("/api/admin/releases/download-url", {
+    method: "POST",
+    body: data,
+  });
+}
+
+/**
  * Direct browser PUT to S3 presigned URL (no proxy — large Setup.exe must not go through Next/API).
  * Sends exactly `upload.headers` from upload-urls (e.g. x-amz-server-side-encryption).
  * Requires CORS on the releases bucket for this origin.

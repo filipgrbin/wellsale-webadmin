@@ -62,10 +62,16 @@ import {
   Pencil,
   FileArchive,
   CheckCircle2,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-
+import {
+  pickWebDownloadRelease,
+  releaseHasWebDownloadTag,
+  stripWebDownloadTag,
+  withWebDownloadTag,
+} from "@/lib/release-download";
 const VERSION_RE = /^\d+\.\d+\.\d+([.-][\w.]+)?$/;
 
 function formatDate(iso: string | null | undefined): string {
@@ -89,6 +95,7 @@ function normalizeFileName(name: string): string {
 export function AdminReleases() {
   const { data, mutate, isLoading } = useSWR("admin-releases", getReleases);
   const releases = data?.releases ?? [];
+  const webDownload = pickWebDownloadRelease(releases);
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editRelease, setEditRelease] = useState<AppRelease | null>(null);
@@ -122,7 +129,12 @@ export function AdminReleases() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Publikované verze</CardTitle>
           <CardDescription>
-            Aktivní release v kanálu je ten, který dostávají pokladny (rollout %). Forced = povinný update.
+            Aktivní release v kanálu dostávají pokladny (rollout %). Forced = povinný update.
+            Ke stažení na webu = notes začínají <code className="text-xs">[DOWN]</code> a rollout 100 %
+            (nezávislé na částečném rolloutu novinky). Aktuálně na webu:{" "}
+            <span className="font-mono font-medium text-foreground">
+              {webDownload?.version ?? "—"}
+            </span>
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -175,6 +187,18 @@ export function AdminReleases() {
                             <Badge variant="secondary">Inactive</Badge>
                           )}
                           {r.forced && <Badge variant="destructive">Forced</Badge>}
+                          {webDownload?.id === r.id && (
+                            <Badge className="gap-1 bg-sky-500/15 text-sky-800 dark:text-sky-300 border-sky-500/30">
+                              <Download className="h-3 w-3" />
+                              Web download
+                            </Badge>
+                          )}
+                          {releaseHasWebDownloadTag(r.release_notes) &&
+                            webDownload?.id !== r.id && (
+                              <Badge variant="outline" className="text-[10px]">
+                                [DOWN]
+                              </Badge>
+                            )}
                         </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground max-w-[180px] truncate" title={r.s3_prefix}>
@@ -279,6 +303,7 @@ function UploadReleaseDialog({
   const [rollout, setRollout] = useState("100");
   const [forced, setForced] = useState(false);
   const [active, setActive] = useState(true);
+  const [webDownload, setWebDownload] = useState(false);
   const [notes, setNotes] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -291,6 +316,7 @@ function UploadReleaseDialog({
     setRollout("100");
     setForced(false);
     setActive(true);
+    setWebDownload(false);
     setNotes("");
     setFiles([]);
     setBusy(false);
@@ -361,13 +387,22 @@ function UploadReleaseDialog({
       }
 
       setStep("Vytvářím záznam v DB…");
+      let finalNotes = notes.trim() || null;
+      let finalRollout = Math.max(0, Math.min(100, Number(rollout) || 0));
+      if (webDownload) {
+        if (finalRollout < 100) {
+          finalRollout = 100;
+          toast.message("Rollout nastaven na 100 % (vyžadováno pro stažení na webu)");
+        }
+        finalNotes = withWebDownloadTag(finalNotes);
+      }
       await createRelease({
         version: v,
         channel,
-        rollout_percent: Math.max(0, Math.min(100, Number(rollout) || 0)),
+        rollout_percent: finalRollout,
         forced,
         active,
-        release_notes: notes.trim() || null,
+        release_notes: finalNotes,
         verifyS3: true,
       });
 
@@ -457,6 +492,29 @@ function UploadReleaseDialog({
                 id="rel-forced"
               />
               <Label htmlFor="rel-forced">Forced update</Label>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2 rounded-lg border border-border bg-secondary/20 p-3">
+            <Checkbox
+              checked={webDownload}
+              onCheckedChange={(c) => {
+                const on = c === true;
+                setWebDownload(on);
+                if (on && Number(rollout) < 100) setRollout("100");
+              }}
+              disabled={busy}
+              id="rel-web-dl"
+              className="mt-0.5"
+            />
+            <div>
+              <Label htmlFor="rel-web-dl" className="cursor-pointer font-medium">
+                Ke stažení na webu (subadmin)
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Přidá <code>[DOWN]</code> do notes a vyžaduje rollout 100 %. Auto-update může mít
+                jinou verzi s nižším rolloutem.
+              </p>
             </div>
           </div>
 
@@ -559,6 +617,7 @@ function EditReleaseDialog({
   const [rollout, setRollout] = useState("0");
   const [forced, setForced] = useState(false);
   const [active, setActive] = useState(true);
+  const [webDownload, setWebDownload] = useState(false);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -570,21 +629,33 @@ function EditReleaseDialog({
     setRollout(String(release.rollout_percent ?? 0));
     setForced(!!release.forced);
     setActive(!!release.active);
-    setNotes(release.release_notes || "");
+    setWebDownload(releaseHasWebDownloadTag(release.release_notes));
+    setNotes(stripWebDownloadTag(release.release_notes));
   }, [release]);
 
   const save = async () => {
     if (!release) return;
     setSaving(true);
     try {
+      let finalRollout = Math.max(0, Math.min(100, Number(rollout) || 0));
+      let finalNotes = notes.trim() || null;
+      if (webDownload) {
+        if (finalRollout < 100) {
+          finalRollout = 100;
+          toast.message("Rollout nastaven na 100 % (vyžadováno pro stažení na webu)");
+        }
+        finalNotes = withWebDownloadTag(finalNotes);
+      } else {
+        finalNotes = stripWebDownloadTag(finalNotes) || null;
+      }
       await updateRelease({
         id: release.id,
         version: release.version,
         channel,
-        rollout_percent: Math.max(0, Math.min(100, Number(rollout) || 0)),
+        rollout_percent: finalRollout,
         forced,
         active,
-        release_notes: notes.trim() || null,
+        release_notes: finalNotes,
       });
       toast.success(`Release ${release.version} uložen`);
       onDone();
@@ -644,6 +715,27 @@ function EditReleaseDialog({
                 id="edit-forced"
               />
               <Label htmlFor="edit-forced">Forced</Label>
+            </div>
+          </div>
+          <div className="flex items-start gap-2 rounded-lg border border-border bg-secondary/20 p-3">
+            <Checkbox
+              checked={webDownload}
+              onCheckedChange={(c) => {
+                const on = c === true;
+                setWebDownload(on);
+                if (on && Number(rollout) < 100) setRollout("100");
+              }}
+              id="edit-web-dl"
+              className="mt-0.5"
+            />
+            <div>
+              <Label htmlFor="edit-web-dl" className="cursor-pointer font-medium">
+                Ke stažení na webu (subadmin)
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Notes začnou <code>[DOWN]</code>, rollout 100 %. Nejnovější taková verze se nabídne ke
+                stažení (i když je jiná verze active s 50 % rolloutem).
+              </p>
             </div>
           </div>
           <div className="grid gap-2">

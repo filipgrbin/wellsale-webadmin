@@ -5,12 +5,10 @@ import useSWR from "swr";
 import { getBranches, getBackupsStats, getMachines } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, Database, Monitor, HardDrive } from "lucide-react";
-import {
-  PosLiveTransactions,
-  type PosRangeValue,
-} from "@/components/pos-live-transactions";
+import { PosLiveTransactions, type PosRangeValue } from "@/components/pos-live-transactions";
 import { TurnoverCharts } from "@/components/turnover-charts";
 import { DayReconcilePanel } from "@/components/day-reconcile-panel";
+import { SubadminAppDownload } from "@/components/subadmin-app-download";
 import { pragueDate } from "@/lib/turnover-utils";
 
 interface SubadminStatsProps {
@@ -56,6 +54,8 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
 
   return (
     <div className="space-y-6">
+      <SubadminAppDownload />
+
       <PosLiveTransactions
         licenseKey={licenseKey}
         lockLicense
