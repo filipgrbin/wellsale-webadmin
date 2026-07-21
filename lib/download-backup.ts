@@ -4,7 +4,10 @@
 // license key). We offer two downloads:
 //  - the raw .wsbak (only WellSale can open it)
 //  - a decrypted .db (plain SQLite, openable by any SQLite viewer)
-import { getBackupDownloadUrl, type Backup } from "@/lib/api";
+//
+// Bytes always go through /api/admin/backups/download (Next proxy → S3),
+// never a browser fetch of the presigned URL (S3 CORS blocks webadmin).
+import { downloadBackupDirect, type Backup } from "@/lib/api";
 import { decryptWsbak } from "@/lib/wsbak-decrypt";
 
 function saveBytes(data: BlobPart, filename: string) {
@@ -24,11 +27,7 @@ function baseName(name: string): string {
 }
 
 async function fetchBackupBytes(backup: Backup): Promise<ArrayBuffer> {
-  const r = await getBackupDownloadUrl(backup.id);
-  if (!r.ok || !r.downloadUrl) throw new Error("Nelze získat odkaz ke stažení");
-  const resp = await fetch(r.downloadUrl);
-  if (!resp.ok) throw new Error("Stažení souboru selhalo");
-  return resp.arrayBuffer();
+  return downloadBackupDirect(backup.id);
 }
 
 // Encrypted backup, exactly as stored. Unreadable without WellSale.

@@ -17,12 +17,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Backup decrypt/download routes authenticate via x-admin-key internally
-  // (subadmin panel also uses these for preview without an admin cookie).
+  // Backup / POS routes authenticate via x-admin-key internally
+  // (subadmin panel also uses these without an admin cookie).
   if (
     pathname === "/api/admin/backups/decrypt" ||
     pathname === "/api/admin/backups/intraday" ||
     pathname === "/api/admin/backups/download" ||
+    pathname.startsWith("/api/admin/pos/") ||
     pathname === "/api/signature/verify"
   ) {
     return NextResponse.next();

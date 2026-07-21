@@ -1,52 +1,69 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://ikehhqxu7b.execute-api.eu-central-1.amazonaws.com";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://ikehhqxu7b.execute-api.eu-central-1.amazonaws.com";
 const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "SUPER_SECRET_ADMIN_NKEY";
 
+/**
+ * Same-origin proxy: get S3 presigned URL server-side, fetch the object,
+ * stream bytes to the browser (avoids S3 CORS on webadmin origin).
+ */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get("id");
-  
+  const adminKey = request.headers.get("x-admin-key") || ADMIN_KEY;
+
   if (!id) {
     return NextResponse.json({ error: "missing_id" }, { status: 400 });
   }
 
   try {
-    // Call the backend download endpoint
-    const response = await fetch(`${API_BASE}/api/admin/backups/download?id=${id}`, {
+    const urlResponse = await fetch(`${API_BASE}/api/admin/backups/download-url`, {
+      method: "POST",
       headers: {
-        "x-admin-key": ADMIN_KEY,
+        "Content-Type": "application/json",
+        "x-admin-key": adminKey,
       },
+      body: JSON.stringify({ id: Number(id) }),
+      cache: "no-store",
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+    if (!urlResponse.ok) {
+      const errorData = await urlResponse.json().catch(() => ({}));
       return NextResponse.json(
-        { error: errorData.reason || "download_failed" },
-        { status: response.status }
+        { error: errorData.reason || errorData.error || "download_url_failed" },
+        { status: urlResponse.status }
       );
     }
 
-    // Get the binary data (base64 encoded from Lambda)
-    const data = await response.arrayBuffer();
-    
-    // Get filename from header
-    const contentDisposition = response.headers.get("content-disposition") || "";
-    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-    const filename = filenameMatch ? filenameMatch[1] : "backup.wsbak";
+    const urlData = await urlResponse.json();
+    if (!urlData.ok || !urlData.downloadUrl) {
+      return NextResponse.json({ error: "no_download_url" }, { status: 502 });
+    }
 
-    // Return as binary
+    const fileResponse = await fetch(urlData.downloadUrl, { cache: "no-store" });
+    if (!fileResponse.ok) {
+      return NextResponse.json(
+        { error: "s3_download_failed" },
+        { status: fileResponse.status === 403 ? 502 : fileResponse.status }
+      );
+    }
+
+    const data = await fileResponse.arrayBuffer();
+    const filename =
+      String(urlData.file_name || urlData.filename || "").trim() ||
+      `backup-${id}.wsbak`;
+
     return new NextResponse(data, {
       headers: {
         "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": `attachment; filename="${filename.replace(/"/g, "")}"`,
+        "Cache-Control": "no-store",
       },
     });
   } catch (error) {
     console.error("Download error:", error);
-    return NextResponse.json(
-      { error: "internal_error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
