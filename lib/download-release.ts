@@ -1,21 +1,14 @@
-// Client-side release Setup.exe download — same as backup: getPresigned → navigate to S3.
+// Release Setup.exe download — identical idea to backup download-url:
+// ask API for a short-lived S3 URL, then navigate the browser there.
 
 import { getReleaseDownloadUrl, type AppRelease } from "@/lib/api";
 
-function triggerNavigationDownload(url: string) {
-  const a = document.createElement("a");
-  a.href = url;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
-/** POST download-url → open S3 presigned URL (no file body through Next). */
+/** POST /api/admin/releases/download-url → open S3 (never through Next). */
 export async function downloadReleaseSetup(release: AppRelease): Promise<void> {
-  const r = await getReleaseDownloadUrl({ id: release.id });
-  if (!r.ok || !r.downloadUrl) {
+  const r = await getReleaseDownloadUrl({ id: release.id, version: release.version });
+  if (!r?.ok || !r.downloadUrl) {
     throw new Error("Nelze získat odkaz ke stažení instalátoru");
   }
-  triggerNavigationDownload(r.downloadUrl);
+  // Top-level navigation — same as clicking a normal download link
+  window.location.assign(r.downloadUrl);
 }

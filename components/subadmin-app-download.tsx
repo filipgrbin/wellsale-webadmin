@@ -56,10 +56,11 @@ export function SubadminAppDownload() {
     if (!release) return;
     setDownloading(true);
     try {
-      // Presigned S3 URL (same as zálohy) — navigate to S3, no file through Next
       await downloadReleaseSetup(release);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Stahování selhalo");
+      const msg = e instanceof Error ? e.message : "Stahování selhalo";
+      console.error("[WellSale download]", e);
+      toast.error(msg);
     } finally {
       setDownloading(false);
     }

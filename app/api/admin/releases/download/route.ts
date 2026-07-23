@@ -6,10 +6,8 @@ const API_BASE =
 const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "SUPER_SECRET_ADMIN_NKEY";
 
 /**
- * Never buffer Setup.exe through Next (large → 413).
- * Resolve a presigned S3 URL and 302-redirect the browser there.
- *
- * Query: id=…  or  version=…
+ * Optional same-origin helper (like backups/download).
+ * Prefer client → getReleaseDownloadUrl → S3; this exists for hard refresh / bookmarks.
  */
 export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
@@ -35,25 +33,29 @@ export async function GET(request: NextRequest) {
       cache: "no-store",
     });
 
-    const payload = await urlResponse.json().catch(() => ({}));
+    const payload = await urlResponse.json().catch(() => ({} as Record<string, unknown>));
 
     if (!urlResponse.ok) {
+      // Pass through Lambda reason (do not hide as generic 502)
       return NextResponse.json(
         {
-          error:
-            payload.reason ||
-            payload.error ||
-            payload.message ||
-            "download_url_failed",
-          detail: payload.detail || payload.s3Key || payload.prefix,
+          error: payload.reason || payload.error || payload.message || "download_url_failed",
+          detail: payload.detail,
+          prefix: payload.prefix,
+          bucket: payload.bucket,
+          objects: payload.objects,
+          s3Key: payload.s3Key,
         },
-        { status: urlResponse.status >= 500 ? 502 : urlResponse.status }
+        { status: urlResponse.status }
       );
     }
 
     const downloadUrl = payload.downloadUrl || payload.url;
     if (!payload.ok || !downloadUrl) {
-      return NextResponse.json({ error: "no_download_url" }, { status: 502 });
+      return NextResponse.json(
+        { error: "no_download_url", payload },
+        { status: 502 }
+      );
     }
 
     return NextResponse.redirect(String(downloadUrl), 302);
