@@ -54,7 +54,10 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
 
   return (
     <div className="space-y-6">
-      <SubadminAppDownload licenseKey={licenseKey} />
+      {/* Desktop: download nahoře; mobil: dolů (viz konec) */}
+      <div className="hidden md:block">
+        <SubadminAppDownload />
+      </div>
 
       <PosLiveTransactions
         licenseKey={licenseKey}
@@ -187,6 +190,10 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
       )}
 
       <DayReconcilePanel licenseKey={licenseKey} days={7} variant="operator" />
+
+      <div className="md:hidden">
+        <SubadminAppDownload />
+      </div>
     </div>
   );
 }

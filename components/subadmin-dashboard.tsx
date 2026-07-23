@@ -9,7 +9,6 @@ import { SubadminBackups } from "@/components/subadmin-backups";
 import { SubadminStats } from "@/components/subadmin-stats";
 import { PosLiveStock } from "@/components/pos-live-stock";
 import { BranchFaults } from "@/components/branch-faults";
-import { SubadminSignatureVerifier } from "@/components/subadmin-signature-verifier";
 import { Building2, Database, KeyRound, LayoutDashboard, LogOut, User, Warehouse } from "lucide-react";
 import {
   DropdownMenu,
@@ -203,10 +202,6 @@ export function SubadminDashboard({
             <PosLiveStock licenseKey={session.licenseKey} />
           </TabsContent>
         </Tabs>
-
-        <div className="mt-10 pt-6 border-t border-border">
-          <SubadminSignatureVerifier />
-        </div>
       </main>
 
       <Dialog open={codeOpen} onOpenChange={setCodeOpen}>
