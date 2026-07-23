@@ -25,10 +25,13 @@ async function apiRequest<T>(endpoint: string, options: ApiOptions = {}): Promis
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
-  const data = await response.json();
-  
+  const data = await response.json().catch(() => ({}));
+
   if (!response.ok) {
-    throw new Error(data.reason || data.error || data.message || "API request failed");
+    const msg =
+      data.reason || data.error || data.message || "API request failed";
+    const detail = data.detail ? `: ${data.detail}` : "";
+    throw new Error(`${msg}${detail}`);
   }
 
   return data;
