@@ -31,6 +31,8 @@ export interface UzaverkaMetadata {
   encrypted?: number;
   app_version?: string;
   till?: TillMeta;
+  /** Jméno pokladního, který uzávěrku uzavřel (nebo "auto"). */
+  closed_by?: string;
   cashier?: string;
   cashier_name?: string;
   operator?: string;
@@ -63,6 +65,15 @@ export function resolveCashierName(meta: unknown): string | null {
   if (direct && String(direct).trim()) return String(direct).trim();
   const fromTill = parsed.till?.end?.actor || parsed.till?.start?.actor;
   if (fromTill && String(fromTill).trim()) return String(fromTill).trim();
+  return null;
+}
+
+/** Kdo udělal uzávěrku — z `metadata_json.closed_by` (POS). */
+export function resolveClosedBy(meta: unknown): string | null {
+  const parsed = asUzaverkaMetadata(meta);
+  if (!parsed) return null;
+  const v = parsed.closed_by;
+  if (v != null && String(v).trim()) return String(v).trim();
   return null;
 }
 

@@ -5,6 +5,7 @@ import {
   hasTillData,
   mergeUzaverkaMetadata,
   resolveCashierName,
+  resolveClosedBy,
   resolveTillTotal,
   type TillSnapshot,
   type UzaverkaMetadata,
@@ -97,7 +98,6 @@ export function UzaverkaTillPanel({ sources, className }: UzaverkaTillPanelProps
   const meta = mergeUzaverkaMetadata(...sources);
   if (!hasTillData(meta)) return null;
 
-  const cashier = resolveCashierName(meta);
   const till = meta!.till!;
 
   return (
@@ -107,12 +107,27 @@ export function UzaverkaTillPanel({ sources, className }: UzaverkaTillPanelProps
           <Banknote className="h-4 w-4 text-emerald-600" />
           Stav pokladny (hotovost)
         </CardTitle>
-        {cashier && (
-          <p className="text-sm text-muted-foreground flex items-center gap-1.5 pt-1">
-            <User className="h-3.5 w-3.5 shrink-0" />
-            Pokladní: <span className="font-medium text-foreground">{cashier}</span>
-          </p>
-        )}
+        {(() => {
+          const closedBy = resolveClosedBy(meta);
+          const cashier = resolveCashierName(meta);
+          if (closedBy) {
+            return (
+              <p className="text-sm text-muted-foreground flex items-center gap-1.5 pt-1">
+                <User className="h-3.5 w-3.5 shrink-0" />
+                Uzavřel: <span className="font-medium text-foreground">{closedBy}</span>
+              </p>
+            );
+          }
+          if (cashier) {
+            return (
+              <p className="text-sm text-muted-foreground flex items-center gap-1.5 pt-1">
+                <User className="h-3.5 w-3.5 shrink-0" />
+                Pokladní: <span className="font-medium text-foreground">{cashier}</span>
+              </p>
+            );
+          }
+          return null;
+        })()}
       </CardHeader>
       <CardContent>
         <div className="grid md:grid-cols-2 gap-3">
@@ -128,12 +143,14 @@ export function UzaverkaTillPanel({ sources, className }: UzaverkaTillPanelProps
 export function UzaverkaTillBadge({ meta }: { meta: unknown }) {
   const m = meta as UzaverkaMetadata | null;
   if (!hasTillData(m)) return null;
+  const closedBy = resolveClosedBy(m);
   const cashier = resolveCashierName(m);
+  const who = closedBy || cashier;
   return (
     <Badge variant="outline" className="text-xs font-normal gap-1">
       <Banknote className="h-3 w-3" />
       Pokladna
-      {cashier ? ` · ${cashier}` : ""}
+      {who ? ` · ${who}` : ""}
     </Badge>
   );
 }

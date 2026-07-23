@@ -56,6 +56,11 @@ export async function extractCloseExportSource(
     const closeDate = close.close_date;
 
     const itemsByTx = new Map<number, CloseTxItem[]>();
+    /** detail_snapshot z položek — fallback pro form / balení / šarži když chybí products. */
+    const detailByProductId = new Map<
+      number,
+      { form?: string; package_size?: string; lot_number?: string }
+    >();
     if (tables.includes("transaction_items")) {
       const itemRows = db
         .prepare("SELECT * FROM transaction_items")
@@ -70,6 +75,24 @@ export async function extractCloseExportSource(
           price_snapshot: Number(obj.price_snapshot || obj.price || 0),
         });
         itemsByTx.set(txId, list);
+
+        const pid = obj.product_id == null ? 0 : Number(obj.product_id);
+        if (pid && obj.detail_snapshot && !detailByProductId.has(pid)) {
+          try {
+            const d = JSON.parse(String(obj.detail_snapshot)) as {
+              form?: string | null;
+              package_size?: string | null;
+              lot_number?: string | null;
+            };
+            detailByProductId.set(pid, {
+              form: d.form?.trim() || undefined,
+              package_size: d.package_size?.trim() || undefined,
+              lot_number: d.lot_number?.trim() || undefined,
+            });
+          } catch {
+            /* ignore */
+          }
+        }
       }
     }
 
@@ -139,27 +162,51 @@ export async function extractCloseExportSource(
       products.push({
         id: m.product_id,
         name: name || `Produkt #${m.product_id}`,
+        lot_number: m.batch_number || null,
       });
     }
-    // If this backup ever includes products table (full DB), merge catalog metadata by id
+    // Catalog from snapshot (new closes) + detail_snapshot fallback
+    const catalogById = new Map<number, Record<string, unknown>>();
     if (tables.includes("products")) {
       try {
         const prodRows = db.prepare("SELECT * FROM products").all() as Record<string, unknown>[];
-        if (prodRows.length) {
-          const byId = new Map(prodRows.map((p) => [Number(p.id), p]));
-          for (const p of products) {
-            const cat = byId.get(p.id);
-            if (!cat) continue;
-            p.subtype = cat.subtype == null ? null : String(cat.subtype);
-            p.form = cat.form == null ? null : String(cat.form);
-            p.package_size = cat.package_size == null ? null : String(cat.package_size);
-            p.lot_number = cat.lot_number == null ? null : String(cat.lot_number);
-            p.supplier_id = cat.supplier_id == null ? null : Number(cat.supplier_id);
-            if (!p.name) p.name = String(cat.name || "");
+        for (const row of prodRows) {
+          const id = Number(row.id);
+          if (!id) continue;
+          catalogById.set(id, row);
+          if (!products.some((p) => p.id === id)) {
+            products.push({
+              id,
+              name: String(row.name || `Produkt #${id}`),
+              subtype: row.subtype == null ? null : String(row.subtype),
+              form: row.form == null ? null : String(row.form),
+              package_size: row.package_size == null ? null : String(row.package_size),
+              lot_number: row.lot_number == null ? null : String(row.lot_number),
+              supplier_id: row.supplier_id == null ? null : Number(row.supplier_id),
+            });
           }
         }
       } catch {
         /* ignore */
+      }
+    }
+    for (const p of products) {
+      const cat = catalogById.get(p.id);
+      if (cat) {
+        p.subtype = cat.subtype == null ? p.subtype ?? null : String(cat.subtype);
+        p.form = cat.form == null ? p.form ?? null : String(cat.form);
+        p.package_size =
+          cat.package_size == null ? p.package_size ?? null : String(cat.package_size);
+        p.lot_number = cat.lot_number == null ? p.lot_number ?? null : String(cat.lot_number);
+        p.supplier_id =
+          cat.supplier_id == null ? p.supplier_id ?? null : Number(cat.supplier_id);
+        if (!p.name) p.name = String(cat.name || "");
+      }
+      const det = detailByProductId.get(p.id);
+      if (det) {
+        if (!p.form && det.form) p.form = det.form;
+        if (!p.package_size && det.package_size) p.package_size = det.package_size;
+        if (!p.lot_number && det.lot_number) p.lot_number = det.lot_number;
       }
     }
 

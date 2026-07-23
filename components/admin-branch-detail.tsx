@@ -66,7 +66,7 @@ import { DayReconcilePanel } from "@/components/day-reconcile-panel";
 import { BackupDownloadDialog } from "@/components/backup-download-dialog";
 import { BranchAppVersion } from "@/components/branch-app-version";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
-import { hasTillData, resolveCashierName } from "@/lib/uzaverka-meta";
+import { hasTillData, resolveCashierName, resolveClosedBy } from "@/lib/uzaverka-meta";
 import { compareAppVersions } from "@/lib/app-capabilities";
 
 const PIN_NONE = "__none__";
@@ -400,6 +400,8 @@ export function AdminBranchDetail({
                 ) : (
                   backups.map((b) => {
                     const ver = resolveBackupAppVersion(b);
+                    const closedBy = resolveClosedBy(b.metadata_json);
+                    const cashier = resolveCashierName(b.metadata_json);
                     return (
                     <TableRow key={b.id}>
                       <TableCell className="max-w-[240px] truncate font-mono text-xs" title={b.file_name}>
@@ -412,7 +414,14 @@ export function AdminBranchDetail({
                         <BranchAppVersion version={ver.app_version} inline />
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {resolveCashierName(b.metadata_json) ?? "—"}
+                        {closedBy ? (
+                          <span>
+                            Uzavřel:{" "}
+                            <span className="font-medium text-foreground">{closedBy}</span>
+                          </span>
+                        ) : (
+                          (cashier ?? "—")
+                        )}
                         {hasTillData(b.metadata_json) && (
                           <span className="ml-1 text-xs text-emerald-600">· pokladna</span>
                         )}

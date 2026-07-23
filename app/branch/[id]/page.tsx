@@ -30,7 +30,7 @@ import { UzaverkaAnalysisPanel } from "@/components/uzaverka-analysis-panel";
 import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
 import { TransactionStockMovementPanel } from "@/components/transaction-stock-movement-panel";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
-import { hasTillData, resolveCashierName } from "@/lib/uzaverka-meta";
+import { hasTillData, resolveCashierName, resolveClosedBy } from "@/lib/uzaverka-meta";
 import { UzaverkaExportDialog } from "@/components/uzaverka-export-dialog";
 
 interface SubadminSession {
@@ -426,6 +426,7 @@ export default function BranchDetailPage() {
                       const meta = (backup.metadata_json || {}) as Record<string, unknown>;
                       const rz = Number(meta.real_zisk);
                       const cashier = resolveCashierName(meta);
+                      const closedBy = resolveClosedBy(meta);
                       const ver = resolveBackupAppVersion(backup);
                       return (
                         <TableRow key={backup.id}>
@@ -439,7 +440,14 @@ export default function BranchDetailPage() {
                             <BranchAppVersion version={ver.app_version} inline />
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
-                            {cashier ?? "—"}
+                            {closedBy ? (
+                              <span>
+                                Uzavřel:{" "}
+                                <span className="font-medium text-foreground">{closedBy}</span>
+                              </span>
+                            ) : (
+                              (cashier ?? "—")
+                            )}
                             {hasTillData(meta) && (
                               <span className="ml-1.5 text-xs text-emerald-600">· pokladna</span>
                             )}

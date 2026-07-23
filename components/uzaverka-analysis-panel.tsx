@@ -12,7 +12,7 @@ import { formatCurrency } from "@/lib/turnover-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Banknote, BarChart3, QrCode } from "lucide-react";
-import { resolveCashierName } from "@/lib/uzaverka-meta";
+import { resolveCashierName, resolveClosedBy } from "@/lib/uzaverka-meta";
 
 interface UzaverkaAnalysisPanelProps {
   decryptedData: ParsedBackupData;
@@ -43,6 +43,9 @@ export function UzaverkaAnalysisPanel({
   );
 
   const uz = decryptedData.uzaverky[0];
+  const closedBy =
+    resolveClosedBy(metadataJson) ??
+    resolveClosedBy(uz as Record<string, unknown> | undefined);
   const cashier =
     resolveCashierName(metadataJson) ??
     resolveCashierName(uz as Record<string, unknown> | undefined);
@@ -91,12 +94,17 @@ export function UzaverkaAnalysisPanel({
                       <span className="text-muted-foreground">Datum uzávěrky:</span>
                       <span className="font-medium">{uz.close_date || uz.datum}</span>
                     </div>
-                    {cashier && (
+                    {closedBy ? (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Uzavřel:</span>
+                        <span className="font-medium">{closedBy}</span>
+                      </div>
+                    ) : cashier ? (
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Pokladní:</span>
                         <span className="font-medium">{cashier}</span>
                       </div>
-                    )}
+                    ) : null}
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Počet transakcí:</span>
                       <span className="font-medium">{decryptedData.stats.totalSales}</span>

@@ -1,6 +1,9 @@
 /**
  * 1:1 port of easytill2/src/lib/evidenceExcel.ts — denní evidence PML.
  * Loads template from disk (ArrayBuffer) instead of fetch/IPC.
+ *
+ * Příjmy a výdeje jsou VŽDY oddělené řádky (souhrn za den / pohyb).
+ * Každý záznam = produktový řádek + řádek „MNOŽSTVÍ CELKEM ks“.
  */
 
 import ExcelJS from "exceljs";
@@ -15,7 +18,12 @@ function dateFmtCz(iso: string): string {
   });
 }
 
-function productLabel(p: { name?: string; subtype?: string | null; form?: string | null; package_size?: string | null } | null | undefined): string {
+function productLabel(
+  p:
+    | { name?: string; subtype?: string | null; form?: string | null; package_size?: string | null }
+    | null
+    | undefined
+): string {
   return [p?.name, p?.subtype, p?.form, p?.package_size]
     .filter(Boolean)
     .join(" ")
@@ -42,17 +50,31 @@ function saleDocNo(m: CloseStockMovement, prefix?: string | null): string {
   return "";
 }
 
+type Sale = { doc: string; qty: number };
+
+/** Jedna evidence-položka = buď jen příjem, nebo jen výdej (nikdy obojí najednou). */
+type EvidenceEntry = {
+  kind: "in" | "out";
+  product: { name?: string; id?: number; subtype?: string | null; form?: string | null; package_size?: string | null; lot_number?: string | null; supplier_id?: number | null };
+  sarze: string;
+  dodavatel: string;
+  prijato: number;
+  prijemDate: string;
+  prijemDoklad: string;
+  sales: Sale[];
+  stav: number | "";
+  sortAt: string;
+};
+
 export async function buildDailyEvidenceExcelBuffer(
   source: CloseExportSource,
   templateBytes: ArrayBuffer | Uint8Array | Buffer
 ): Promise<ArrayBuffer> {
-  const { closeDate, settings, products, suppliers, movements } = {
-    closeDate: source.close.close_date,
-    settings: source.settings as Record<string, string>,
-    products: source.products,
-    suppliers: source.suppliers,
-    movements: source.dayMovements,
-  };
+  const closeDate = source.close.close_date;
+  const settings = source.settings as Record<string, string>;
+  const products = source.products;
+  const suppliers = source.suppliers;
+  const movements = source.dayMovements;
 
   const supplierMap = new Map(suppliers.map((s) => [s.id, s]));
   const productMap = new Map(products.map((p) => [p.id, p]));
@@ -90,7 +112,21 @@ export async function buildDailyEvidenceExcelBuffer(
     /* */
   }
 
+  // Smaž ukázková data (řádek 3+), mergované „MNOŽSTVÍ…“ obnovíme při zápisu.
   for (const ws of [ws1, ws2]) {
+    try {
+      const merges = [...(((ws as unknown as { model?: { merges?: string[] } }).model?.merges) || [])];
+      for (const m of merges) {
+        if (/^A1:/i.test(m)) continue;
+        try {
+          ws.unMergeCells(m);
+        } catch {
+          /* */
+        }
+      }
+    } catch {
+      /* */
+    }
     const last = Math.max(ws.rowCount || 0, 40);
     for (let r = 3; r <= last; r++) {
       ws.getRow(r).eachCell({ includeEmpty: true }, (cell) => {
@@ -99,85 +135,119 @@ export async function buildDailyEvidenceExcelBuffer(
     }
   }
 
-  type Sale = { doc: string; qty: number };
-  type Group = {
-    product: (typeof products)[number] | { name?: string; id: number };
-    sarze: string;
-    dodavatel: string;
-    prijato: number;
-    sales: Sale[];
-    stav: number | "";
-    order: number;
-    mvs: CloseStockMovement[];
-  };
-  const groups = new Map<string, Group>();
-  let order = 0;
-  for (const m of movements) {
+  // ── Oddělené příjmy (1 pohyb = 1 záznam) + výdeje (seskupení produkt+šarže) ─
+  const entries: EvidenceEntry[] = [];
+  const outByKey = new Map<string, EvidenceEntry>();
+
+  const sortedMovements = [...movements].sort((a, b) =>
+    String(a.created_at || "").localeCompare(String(b.created_at || ""))
+  );
+
+  for (const m of sortedMovements) {
     if (m.kind === "adjust") continue;
-    const product = productMap.get(m.product_id) ?? { name: m.product_name, id: m.product_id };
-    const observedName = String(m.product_name || product.name || "").trim();
-    const sarze = String(m.batch_number || (product as { lot_number?: string }).lot_number || "").trim();
-    // Include observed name so mid-day rename in .wsbak → separate evidence rows
-    const key = `${m.product_id}::${observedName.toLowerCase()}::${sarze}`;
-    if (!groups.has(key)) {
+    const catalog = productMap.get(m.product_id);
+    const observedName = String(m.product_name || catalog?.name || "").trim();
+    const product = {
+      ...(catalog || {}),
+      id: m.product_id,
+      name: observedName || catalog?.name || `Produkt #${m.product_id}`,
+    };
+    const sarze = String(m.batch_number || product.lot_number || "").trim();
+    const qty = Math.abs(Number(m.delta) || 0);
+    if (qty <= 0) continue;
+
+    if (m.delta > 0) {
       const prodSupplier =
-        (product as { supplier_id?: number | null }).supplier_id != null
-          ? supplierMap.get((product as { supplier_id: number }).supplier_id)
-          : null;
-      order += 1;
-      groups.set(key, {
-        product: observedName ? { ...product, name: observedName } : product,
+        product.supplier_id != null ? supplierMap.get(product.supplier_id) : null;
+      entries.push({
+        kind: "in",
+        product,
+        sarze,
+        dodavatel: supplierLabel(null, m) || supplierLabel(prodSupplier),
+        prijato: qty,
+        prijemDate: dateFmtCz(String(m.created_at || "")),
+        prijemDoklad: String(m.batch_document || m.document_number || m.batch_doc_number || ""),
+        sales: [],
+        stav: m.stock_after != null ? Number(m.stock_after) : "",
+        sortAt: String(m.created_at || ""),
+      });
+      continue;
+    }
+
+    // Výdej: souhrn za den (produkt + pozorované jméno + šarže)
+    const key = `${m.product_id}::${observedName.toLowerCase()}::${sarze}`;
+    let g = outByKey.get(key);
+    if (!g) {
+      const prodSupplier =
+        product.supplier_id != null ? supplierMap.get(product.supplier_id) : null;
+      g = {
+        kind: "out",
+        product,
         sarze,
         dodavatel: supplierLabel(prodSupplier),
         prijato: 0,
+        prijemDate: "",
+        prijemDoklad: "",
         sales: [],
         stav: "",
-        order,
-        mvs: [],
-      });
+        sortAt: String(m.created_at || ""),
+      };
+      outByKey.set(key, g);
+      entries.push(g);
     }
-    const g = groups.get(key)!;
-    g.mvs.push(m);
-    const qty = Math.abs(Number(m.delta) || 0);
-    if (m.delta > 0) {
-      g.prijato += qty;
-      if (m.supplier_name || m.supplier_address) g.dodavatel = supplierLabel(null, m) || g.dodavatel;
-    } else {
-      const doc = saleDocNo(m, prefix);
-      if (doc) g.sales.push({ doc, qty });
-      else g.sales.push({ doc: "", qty });
-    }
+    g.sales.push({ doc: saleDocNo(m, prefix), qty });
     if (m.stock_after != null) g.stav = Number(m.stock_after);
   }
 
-  const DOC_FIRST = 6;
-  const DOC_LAST = 28;
+  entries.sort((a, b) => a.sortAt.localeCompare(b.sortAt));
+
+  // ── List 1: DENNÍ PRODEJ ──────────────────────────────────────────────────
+  const DOC_FIRST = 6; // F
+  const DOC_LAST = 28; // AB
   const DOC_SLOTS = DOC_LAST - DOC_FIRST + 1;
 
   let r1 = 3;
-  const sorted = [...groups.values()].sort((a, b) => a.order - b.order);
-  for (const g of sorted) {
+  let order1 = 0;
+  for (const g of entries) {
+    order1 += 1;
     const issued = g.sales.reduce((s, x) => s + x.qty, 0);
-    const celkem = typeof g.stav === "number" ? g.stav + issued : g.prijato;
-    const slotSales = g.sales.slice(0, DOC_SLOTS);
-    const overflow = g.sales.length > DOC_SLOTS;
+    const celkem =
+      typeof g.stav === "number"
+        ? g.kind === "out"
+          ? g.stav + issued
+          : g.stav
+        : g.kind === "in"
+          ? g.prijato
+          : issued;
+    const slotSales = g.kind === "out" ? g.sales.slice(0, DOC_SLOTS) : [];
+    const overflow = g.kind === "out" && g.sales.length > DOC_SLOTS;
 
     const prodRow = ws1.getRow(r1);
-    prodRow.getCell(1).value = String(g.order);
+    prodRow.getCell(1).value = String(order1);
     prodRow.getCell(2).value = productLabel(g.product);
-    prodRow.getCell(4).value = dayLabel;
-    for (let i = 0; i < slotSales.length; i++) {
-      prodRow.getCell(DOC_FIRST + i).value = slotSales[i].doc || null;
+    if (g.kind === "in") {
+      prodRow.getCell(3).value = g.prijemDate || "";
+      prodRow.getCell(5).value = g.prijemDoklad || "";
+    } else {
+      prodRow.getCell(4).value = dayLabel;
+      for (let i = 0; i < slotSales.length; i++) {
+        prodRow.getCell(DOC_FIRST + i).value = slotSales[i].doc || null;
+      }
     }
     prodRow.getCell(29).value = g.sarze;
     prodRow.getCell(30).value = g.dodavatel;
-    prodRow.getCell(31).value = g.prijato || 0;
+    prodRow.getCell(31).value = g.kind === "in" ? g.prijato || 0 : 0;
     prodRow.getCell(32).value = celkem || 0;
-    if (overflow) {
-      prodRow.getCell(33).value = issued;
-      prodRow.getCell(34).value = (celkem || 0) - issued;
+    if (g.kind === "out") {
+      if (overflow) {
+        prodRow.getCell(33).value = issued;
+        prodRow.getCell(34).value = (celkem || 0) - issued;
+      } else {
+        prodRow.getCell(33).value = { formula: `SUM(F${r1 + 1}:AB${r1 + 1})` };
+        prodRow.getCell(34).value = { formula: `AF${r1}-AG${r1}` };
+      }
     } else {
-      prodRow.getCell(33).value = { formula: `SUM(F${r1 + 1}:AB${r1 + 1})` };
+      prodRow.getCell(33).value = 0;
       prodRow.getCell(34).value = { formula: `AF${r1}-AG${r1}` };
     }
     prodRow.getCell(35).value = "";
@@ -185,80 +255,84 @@ export async function buildDailyEvidenceExcelBuffer(
 
     r1 += 1;
     const sumRow = ws1.getRow(r1);
-    sumRow.getCell(1).value = "MNOŽSTVÍ CELKEM ks";
-    for (let i = 0; i < slotSales.length; i++) {
-      sumRow.getCell(DOC_FIRST + i).value = slotSales[i].qty || 0;
+    try {
+      ws1.mergeCells(r1, 1, r1, 5);
+    } catch {
+      /* */
     }
-    if (overflow) {
-      const rest = g.sales.slice(DOC_SLOTS).reduce((s, x) => s + x.qty, 0);
-      if (slotSales.length > 0) {
-        const last = DOC_FIRST + slotSales.length - 1;
-        sumRow.getCell(last).value = (slotSales[slotSales.length - 1].qty || 0) + rest;
-      } else {
-        sumRow.getCell(DOC_FIRST).value = issued;
+    sumRow.getCell(1).value = "MNOŽSTVÍ CELKEM ks";
+    if (g.kind === "out") {
+      for (let i = 0; i < slotSales.length; i++) {
+        sumRow.getCell(DOC_FIRST + i).value = slotSales[i].qty || 0;
+      }
+      if (overflow) {
+        const rest = g.sales.slice(DOC_SLOTS).reduce((s, x) => s + x.qty, 0);
+        if (slotSales.length > 0) {
+          const last = DOC_FIRST + slotSales.length - 1;
+          sumRow.getCell(last).value = (slotSales[slotSales.length - 1].qty || 0) + rest;
+        } else {
+          sumRow.getCell(DOC_FIRST).value = issued;
+        }
       }
     }
     sumRow.commit();
     r1 += 1;
   }
-  if (sorted.length === 0) {
+  if (entries.length === 0) {
     ws1.getRow(3).getCell(1).value = "Žádné pohyby skladu v tento den.";
   }
 
+  // ── List 2: Evidence — oddělený příjem / výdej (souhrnné řádky) ────────────
   let r2 = 3;
-  let n = 0;
-  for (const g of sorted) {
-    let totalPrijato = 0;
-    let totalVydano = 0;
-    let lastStav: number | "" = "";
+  let order2 = 0;
+  for (const g of entries) {
+    order2 += 1;
+    const issued = g.sales.reduce((s, x) => s + x.qty, 0);
+    const celkem =
+      typeof g.stav === "number"
+        ? g.kind === "out"
+          ? g.stav + issued
+          : g.stav
+        : g.kind === "in"
+          ? g.prijato
+          : issued;
+    const prodR = r2;
+    const sumR = r2 + 1;
 
-    for (const m of g.mvs) {
-      const isIn = m.delta > 0;
-      const qty = Math.abs(Number(m.delta) || 0);
-      const prodSupplier =
-        (g.product as { supplier_id?: number | null }).supplier_id != null
-          ? supplierMap.get((g.product as { supplier_id: number }).supplier_id)
-          : null;
-      const dodavatel = isIn
-        ? supplierLabel(null, m) || supplierLabel(prodSupplier) || g.dodavatel
-        : supplierLabel(prodSupplier) || g.dodavatel;
-      const dokladPrijmu = isIn
-        ? m.batch_document || m.document_number || m.batch_doc_number || ""
-        : "";
-      const dokladVydeje = !isIn ? saleDocNo(m, prefix) : "";
-      const stav = m.stock_after != null ? Number(m.stock_after) : "";
-      if (stav !== "") lastStav = stav;
-      if (isIn) totalPrijato += qty;
-      else totalVydano += qty;
-      n += 1;
-
-      const row = ws2.getRow(r2);
-      row.getCell(1).value = String(n);
-      row.getCell(2).value = productLabel(g.product);
-      row.getCell(3).value = isIn ? dateFmtCz(String(m.created_at || "")) : "";
-      row.getCell(4).value = !isIn ? dateFmtCz(String(m.created_at || "")) : "";
-      row.getCell(5).value = dokladPrijmu;
-      row.getCell(6).value = dokladVydeje;
-      row.getCell(7).value = g.sarze;
-      row.getCell(8).value = dodavatel;
-      row.getCell(9).value = isIn ? qty : "";
-      row.getCell(10).value = "";
-      row.getCell(11).value = !isIn ? qty : "";
-      row.getCell(12).value = stav === "" ? "" : stav;
-      row.getCell(13).value = "";
-      row.commit();
-      r2 += 1;
+    const prodRow = ws2.getRow(prodR);
+    prodRow.getCell(1).value = String(order2);
+    prodRow.getCell(2).value = productLabel(g.product);
+    if (g.kind === "in") {
+      prodRow.getCell(3).value = g.prijemDate || "";
+      prodRow.getCell(5).value = g.prijemDoklad || "";
+      prodRow.getCell(6).value = null;
+      prodRow.getCell(9).value = g.prijato || 0;
+    } else {
+      prodRow.getCell(4).value = dayLabel;
+      prodRow.getCell(6).value = issued > 0 ? pvDoc : null;
+      prodRow.getCell(9).value = 0;
     }
+    prodRow.getCell(7).value = g.sarze;
+    prodRow.getCell(8).value = g.dodavatel;
+    prodRow.getCell(10).value = celkem || 0;
+    prodRow.getCell(11).value = { formula: `SUM(F${sumR}:F${sumR})` };
+    prodRow.getCell(12).value = { formula: `J${prodR}-K${prodR}` };
+    prodRow.getCell(13).value = "";
+    prodRow.commit();
 
-    const sum = ws2.getRow(r2);
-    sum.getCell(1).value = "MNOŽSTVÍ CELKEM ks";
-    sum.getCell(9).value = totalPrijato;
-    sum.getCell(11).value = totalVydano;
-    sum.getCell(12).value = lastStav === "" ? "" : lastStav;
-    sum.commit();
-    r2 += 1;
+    const sumRow = ws2.getRow(sumR);
+    try {
+      ws2.mergeCells(sumR, 1, sumR, 5);
+    } catch {
+      /* */
+    }
+    sumRow.getCell(1).value = "MNOŽSTVÍ CELKEM ks";
+    sumRow.getCell(6).value = g.kind === "out" ? issued || 0 : 0;
+    sumRow.commit();
+
+    r2 += 2;
   }
-  if (sorted.length === 0) {
+  if (entries.length === 0) {
     ws2.getRow(3).getCell(1).value = "Žádné pohyby skladu v tento den.";
   }
 
