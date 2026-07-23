@@ -31,6 +31,7 @@ import { UzaverkaTillPanel } from "@/components/uzaverka-till-panel";
 import { TransactionStockMovementPanel } from "@/components/transaction-stock-movement-panel";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
 import { hasTillData, resolveCashierName } from "@/lib/uzaverka-meta";
+import { UzaverkaExportDialog } from "@/components/uzaverka-export-dialog";
 
 interface SubadminSession {
   licenseKey: string;
@@ -81,6 +82,7 @@ import {
   ShoppingCart,
   Loader2,
   Download,
+  FileDown,
   TableIcon,
   Users,
   Settings,
@@ -164,6 +166,7 @@ export default function BranchDetailPage() {
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [isDownloading, setIsDownloading] = useState<number | null>(null);
   const [downloadChoice, setDownloadChoice] = useState<Backup | null>(null);
+  const [exportBackup, setExportBackup] = useState<Backup | null>(null);
   const [selectedProdej, setSelectedProdej] = useState<{ id: number; cislo_dokladu: string; datum: string; celkem: number; platba_typ: string } | null>(null);
 
   // Fetch branch info - we need to get it from the list of branches using the license key
@@ -467,6 +470,14 @@ export default function BranchDetailPage() {
                               </Button>
                               <Button
                                 variant="ghost"
+                                size="sm"
+                                onClick={() => setExportBackup(backup)}
+                              >
+                                <FileDown className="h-4 w-4 mr-1" />
+                                Export
+                              </Button>
+                              <Button
+                                variant="ghost"
                                 size="icon"
                                 onClick={() => handleDownload(backup)}
                                 disabled={isDownloading === backup.id}
@@ -576,6 +587,13 @@ export default function BranchDetailPage() {
       <BackupDownloadDialog
         backup={downloadChoice}
         onOpenChange={(o) => { if (!o) setDownloadChoice(null); }}
+      />
+
+      <UzaverkaExportDialog
+        backup={exportBackup}
+        branch={branch}
+        open={!!exportBackup}
+        onOpenChange={(o) => { if (!o) setExportBackup(null); }}
       />
 
       {/* Backup Viewer Dialog */}

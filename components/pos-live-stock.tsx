@@ -39,6 +39,7 @@ import {
   Warehouse,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDisplayDateTime, pragueDate } from "@/lib/turnover-utils";
 
 interface PosLiveStockProps {
   licenseKey: string;
@@ -164,6 +165,31 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
         (branchMeta.get(l.branchId)?.code || "").toLowerCase().includes(q)
     );
   }, [levels, search, branchMeta]);
+
+  const todayKey = pragueDate(new Date());
+  const todayMovements = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return filteredMovements
+      .filter((m) => {
+        const at = String(m.created_at || "");
+        // Prague calendar day match (YYYY-MM-DD prefix or pragueDate parse)
+        const day =
+          /^\d{4}-\d{2}-\d{2}/.test(at) ? at.slice(0, 10) : pragueDate(new Date(at));
+        return day === todayKey;
+      })
+      .filter((m) => {
+        if (!q) return true;
+        const name = String(m.product_name || "").toLowerCase();
+        const branch = branchMeta.get(m.branch_id);
+        return (
+          name.includes(q) ||
+          String(m.local_id || "").includes(q) ||
+          String(m.transaction_id || "").includes(q) ||
+          String(m.product_id || "").includes(q) ||
+          (branch?.code || "").toLowerCase().includes(q)
+        );
+      });
+  }, [filteredMovements, todayKey, search, branchMeta]);
 
   const totals = useMemo(() => {
     let known = 0;
@@ -416,6 +442,104 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
                   {visibleLevels.length === 1 ? "řádek" : "řádků"}
                 </span>
                 <span>{filteredMovements.length} pohybů v paměti</span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Pohyby za dnešek ({todayKey})</CardTitle>
+          <CardDescription>
+            Jednotlivé skladové pohyby — stejný filtr prodejen jako výše. ID pohybu a vazba na
+            transakci.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!allBranches && selectedBranchIds.size === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              Vyberte alespoň jednu prodejnu
+            </p>
+          ) : loading && movements.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Načítám…
+            </p>
+          ) : todayMovements.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              Dnes zatím žádné pohyby ve vybraném rozsahu.
+            </p>
+          ) : (
+            <div className="rounded-lg border border-border overflow-hidden">
+              <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 sticky top-0 z-10">
+                    <tr className="text-left text-xs text-muted-foreground">
+                      <th className="px-3 py-2 font-medium">Čas</th>
+                      <th className="px-3 py-2 font-medium">Prodejna</th>
+                      <th className="px-3 py-2 font-medium">Produkt</th>
+                      <th className="px-3 py-2 font-medium">Typ</th>
+                      <th className="px-3 py-2 font-medium text-right">Δ</th>
+                      <th className="px-3 py-2 font-medium text-right">Stav po</th>
+                      <th className="px-3 py-2 font-medium">ID pohybu</th>
+                      <th className="px-3 py-2 font-medium">TX id</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {todayMovements.map((m) => {
+                      const branch = branchMeta.get(m.branch_id);
+                      return (
+                        <tr
+                          key={`${m.branch_id}:${m.local_id}`}
+                          className="hover:bg-muted/30"
+                        >
+                          <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap font-mono">
+                            {formatDisplayDateTime(m.created_at)}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Badge variant="outline" className="font-normal">
+                              {branch?.code || `#${m.branch_id}`}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="font-medium leading-snug">
+                              {m.product_name || "—"}
+                            </div>
+                            {m.product_id != null && (
+                              <div className="text-[11px] text-muted-foreground font-mono">
+                                produkt {m.product_id}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground">
+                            {formatStockKind(m.kind)}
+                          </td>
+                          <td
+                            className={cn(
+                              "px-3 py-2 text-right tabular-nums font-medium",
+                              m.delta > 0 && "text-emerald-600",
+                              m.delta < 0 && "text-red-600"
+                            )}
+                          >
+                            {m.delta > 0 ? `+${m.delta}` : m.delta}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                            {m.stock_after == null ? "—" : m.stock_after}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs">{m.local_id}</td>
+                          <td className="px-3 py-2 font-mono text-xs">
+                            {m.transaction_id != null ? m.transaction_id : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-3 py-2 border-t border-border text-xs text-muted-foreground">
+                {todayMovements.length}{" "}
+                {todayMovements.length === 1 ? "pohyb" : "pohybů"} dnes
               </div>
             </div>
           )}

@@ -72,6 +72,7 @@ import {
   stripWebDownloadTag,
   withWebDownloadTag,
 } from "@/lib/release-download";
+import { downloadReleaseSetup } from "@/lib/download-release";
 const VERSION_RE = /^\d+\.\d+\.\d+([.-][\w.]+)?$/;
 
 function formatDate(iso: string | null | undefined): string {
@@ -209,6 +210,24 @@ export function AdminReleases() {
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Stáhnout Setup.exe"
+                            onClick={() => {
+                              void (async () => {
+                                try {
+                                  await downloadReleaseSetup(r);
+                                } catch (e) {
+                                  toast.error(
+                                    e instanceof Error ? e.message : "Stahování selhalo"
+                                  );
+                                }
+                              })();
+                            }}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
                           <Button variant="ghost" size="icon" onClick={() => setEditRelease(r)} title="Upravit">
                             <Pencil className="h-4 w-4" />
                           </Button>

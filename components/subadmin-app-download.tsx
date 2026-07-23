@@ -142,8 +142,7 @@ export function SubadminAppDownload() {
           </div>
           <p>
             Internet je potřeba při první aktivaci licence a alespoň jednou za 25 dní
-            (ověření licence). Denní prodej, sklad a uzávěrky fungují i bez připojení;
-            online je hlavně pro licenci, aktualizace a cloud.
+            (ověření licence).
           </p>
         </div>
       </CardContent>

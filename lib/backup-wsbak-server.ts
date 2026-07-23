@@ -335,6 +335,34 @@ export async function fetchAndDecryptBackupById(
   adminKey: string,
   apiBase: string
 ): Promise<{ backup: BackupInfoRow; data: ParsedBackupData }> {
+  const { backup, encryptedBuffer } = await fetchBackupEncryptedBuffer(id, adminKey, apiBase);
+  const data = await decryptBackupFileBuffer(encryptedBuffer, backup.license_key);
+  return { backup, data };
+}
+
+/** Download + decrypt to plain SQLite bytes (for 1:1 export generators). */
+export async function fetchAndDecryptSqliteBufferById(
+  id: number,
+  adminKey: string,
+  apiBase: string
+): Promise<{ backup: BackupInfoRow; sqliteBuffer: Buffer }> {
+  const { backup, encryptedBuffer } = await fetchBackupEncryptedBuffer(id, adminKey, apiBase);
+  const name = String(backup.file_name || "").toLowerCase();
+  if (name.endsWith(".db") && !encryptedBuffer.slice(0, 8).equals(MAGIC)) {
+    // plain sqlite uploaded as .db
+    if (encryptedBuffer.slice(0, 16).toString("utf8").startsWith("SQLite format 3")) {
+      return { backup, sqliteBuffer: encryptedBuffer };
+    }
+  }
+  const sqliteBuffer = decryptWsbakBuffer(encryptedBuffer, backup.license_key);
+  return { backup, sqliteBuffer };
+}
+
+async function fetchBackupEncryptedBuffer(
+  id: number,
+  adminKey: string,
+  apiBase: string
+): Promise<{ backup: BackupInfoRow; encryptedBuffer: Buffer }> {
   const backupResponse = await fetch(`${apiBase}/api/admin/backups/get?id=${id}`, {
     headers: { "x-admin-key": adminKey },
   });
@@ -377,15 +405,13 @@ export async function fetchAndDecryptBackupById(
   }
 
   const encryptedBuffer = Buffer.from(await fileResponse.arrayBuffer());
-  const data = await decryptBackupFileBuffer(encryptedBuffer, licenseKey);
-
   return {
     backup: {
       id: backupInfo.backup.id,
-      license_key: backupInfo.backup.license_key,
+      license_key: licenseKey,
       branch_id: backupInfo.backup.branch_id,
       file_name: backupInfo.backup.file_name,
     },
-    data,
+    encryptedBuffer,
   };
 }
