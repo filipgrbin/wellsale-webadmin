@@ -695,8 +695,8 @@ export async function deleteRelease(data: {
 
 /**
  * Presigned URL for a release artifact (Setup.exe).
- * Backend: POST /api/admin/releases/download-url
- * Body: { id } or { version }; optional fileName.
+ * Uses GET /api/admin/releases?downloadId=… (existing API GW route).
+ * POST /api/admin/releases/download-url is broken on api.wellsale.cz (APIGW 500).
  */
 export async function getReleaseDownloadUrl(data: {
   id?: number;
@@ -709,10 +709,11 @@ export async function getReleaseDownloadUrl(data: {
   version?: string;
   contentType?: string;
 }> {
-  return apiRequest("/api/admin/releases/download-url", {
-    method: "POST",
-    body: data,
-  });
+  const params: Record<string, string> = {};
+  if (data.id != null) params.downloadId = String(data.id);
+  if (data.version) params.downloadVersion = data.version;
+  if (data.fileName) params.fileName = data.fileName;
+  return apiRequest("/api/admin/releases", { params });
 }
 
 /**

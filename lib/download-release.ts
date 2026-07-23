@@ -3,7 +3,7 @@
 
 import { getReleaseDownloadUrl, type AppRelease } from "@/lib/api";
 
-/** POST /api/admin/releases/download-url → open S3 (never through Next). */
+/** GET /api/admin/releases?downloadId=… → open S3 (never through Next). */
 export async function downloadReleaseSetup(release: AppRelease): Promise<void> {
   const r = await getReleaseDownloadUrl({ id: release.id, version: release.version });
   if (!r?.ok || !r.downloadUrl) {

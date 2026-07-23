@@ -8,6 +8,7 @@ const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "SUPER_SECRET_ADMIN_NKEY"
 /**
  * Optional same-origin helper (like backups/download).
  * Prefer client → getReleaseDownloadUrl → S3; this exists for hard refresh / bookmarks.
+ * Uses GET /api/admin/releases?downloadId=… (POST …/download-url is broken on APIGW).
  */
 export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
@@ -18,25 +19,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "missing_id_or_version" }, { status: 400 });
   }
 
-  const body: Record<string, unknown> = {};
-  if (id) body.id = Number(id);
-  if (version) body.version = version;
+  const qs = new URLSearchParams();
+  if (id) qs.set("downloadId", id);
+  if (version) qs.set("downloadVersion", version);
 
   try {
-    const urlResponse = await fetch(`${API_BASE}/api/admin/releases/download-url`, {
-      method: "POST",
+    const urlResponse = await fetch(`${API_BASE}/api/admin/releases?${qs}`, {
+      method: "GET",
       headers: {
-        "Content-Type": "application/json",
         "x-admin-key": adminKey,
       },
-      body: JSON.stringify(body),
       cache: "no-store",
     });
 
     const payload = await urlResponse.json().catch(() => ({} as Record<string, unknown>));
 
     if (!urlResponse.ok) {
-      // Pass through Lambda reason (do not hide as generic 502)
       return NextResponse.json(
         {
           error: payload.reason || payload.error || payload.message || "download_url_failed",
