@@ -35,29 +35,36 @@ export async function GET(request: NextRequest) {
       cache: "no-store",
     });
 
+    const payload = await urlResponse.json().catch(() => ({}));
+
     if (!urlResponse.ok) {
-      const errorData = await urlResponse.json().catch(() => ({}));
       return NextResponse.json(
         {
           error:
-            errorData.reason ||
-            errorData.error ||
-            errorData.message ||
+            payload.reason ||
+            payload.error ||
+            payload.message ||
             "download_url_failed",
+          detail: payload.detail || payload.s3Key || payload.prefix,
         },
-        { status: urlResponse.status }
+        { status: urlResponse.status >= 500 ? 502 : urlResponse.status }
       );
     }
 
-    const urlData = await urlResponse.json();
-    const downloadUrl = urlData.downloadUrl || urlData.url;
-    if (!urlData.ok || !downloadUrl) {
+    const downloadUrl = payload.downloadUrl || payload.url;
+    if (!payload.ok || !downloadUrl) {
       return NextResponse.json({ error: "no_download_url" }, { status: 502 });
     }
 
-    return NextResponse.redirect(downloadUrl, 302);
+    return NextResponse.redirect(String(downloadUrl), 302);
   } catch (error) {
     console.error("Release download redirect error:", error);
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "internal_error",
+        detail: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
   }
 }

@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { buildReconcileReport } from "@/lib/day-reconcile";
-import { formatCurrency } from "@/lib/turnover-utils";
+import { formatCurrency, formatDisplayDate, formatDisplayDateRange } from "@/lib/turnover-utils";
 import { DayReconcileBadge } from "@/components/day-reconcile-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -86,7 +86,7 @@ export function DayReconcilePanel({
 
             {problemRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Žádné neshody v období {data.from} – {data.to}.
+                Žádné neshody v období {formatDisplayDateRange(data.from, data.to)}.
               </p>
             ) : (
               <div className="overflow-x-auto rounded-lg border border-border">
@@ -108,7 +108,9 @@ export function DayReconcilePanel({
                         key={`${r.branchId}-${r.closeDate}`}
                         className="border-b border-border last:border-0"
                       >
-                        <td className="px-3 py-2 tabular-nums">{r.closeDate}</td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {formatDisplayDate(r.closeDate)}
+                        </td>
                         {!branchId && (
                           <td className="px-3 py-2">
                             <span className="font-medium">{r.branchCode || `#${r.branchId}`}</span>

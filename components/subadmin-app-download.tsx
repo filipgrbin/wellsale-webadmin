@@ -4,7 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { getReleases } from "@/lib/api";
 import { pickWebDownloadRelease } from "@/lib/release-download";
-import { downloadReleaseSetupViaPresign } from "@/lib/download-release";
+import { downloadReleaseSetup } from "@/lib/download-release";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, Loader2, Package } from "lucide-react";
@@ -57,7 +57,7 @@ export function SubadminAppDownload() {
     setDownloading(true);
     try {
       // Presigned S3 URL (same as zálohy) — navigate to S3, no file through Next
-      await downloadReleaseSetupViaPresign(release);
+      await downloadReleaseSetup(release);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Stahování selhalo");
     } finally {

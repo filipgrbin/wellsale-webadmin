@@ -13,6 +13,7 @@ import {
   formatCurrency,
   pragueDate,
   rangeDayCount,
+  formatDisplayDateRange,
 } from "@/lib/turnover-utils";
 import {
   buildPosChartBuckets,
@@ -493,25 +494,32 @@ export function TurnoverCharts({
         </>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {presetLabel[rangePreset]} — tržby
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(rangeSummary.revenue)}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {rangeSummary.txCount}{" "}
-              {rangeSummary.txCount === 1
-                ? "transakce"
-                : rangeSummary.txCount >= 2 && rangeSummary.txCount <= 4
+      <div
+        className={cn(
+          "grid gap-4 sm:grid-cols-2",
+          hideRangeControls ? "lg:grid-cols-3" : "lg:grid-cols-5"
+        )}
+      >
+        {!hideRangeControls && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Tržby
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(rangeSummary.revenue)}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {rangeSummary.txCount}{" "}
+                {rangeSummary.txCount === 1
                   ? "transakce"
-                  : "transakcí"}
-            </p>
-          </CardContent>
-        </Card>
+                  : rangeSummary.txCount >= 2 && rangeSummary.txCount <= 4
+                    ? "transakce"
+                    : "transakcí"}
+              </p>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
@@ -558,23 +566,25 @@ export function TurnoverCharts({
             </p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-              <CalendarRange className="h-3.5 w-3.5" />
-              Období
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-bold">
-              {from === to ? from : `${from} — ${to}`}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {dayCount} {dayCount === 1 ? "den" : dayCount < 5 ? "dny" : "dní"}
-              {posData?.truncated ? " · zkráceno limitem API" : ""}
-            </p>
-          </CardContent>
-        </Card>
+        {!hideRangeControls && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                <CalendarRange className="h-3.5 w-3.5" />
+                Období
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-lg font-bold">
+                {formatDisplayDateRange(from, to)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {dayCount} {dayCount === 1 ? "den" : dayCount < 5 ? "dny" : "dní"}
+                {posData?.truncated ? " · zkráceno limitem API" : ""}
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <Card>
@@ -711,7 +721,7 @@ export function TurnoverCharts({
       <TurnoverInsightsPanel
         insights={periodInsights}
         productLimit={30}
-        description={`Metriky z období ${from === to ? from : `${from} – ${to}`}`}
+        description={`Metriky z období ${formatDisplayDateRange(from, to)}`}
       />
     </div>
   );

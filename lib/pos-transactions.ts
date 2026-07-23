@@ -302,8 +302,8 @@ export function formatTxTime(createdAt: string): string {
       })();
 
   if (day && day !== today && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
-    const [, m, d] = day.split("-");
-    return `${Number(d)}.${Number(m)}. ${time}`;
+    const [y, m, d] = day.split("-");
+    return `${Number(d)}.${Number(m)}.${y} ${time}`;
   }
   return time;
 }

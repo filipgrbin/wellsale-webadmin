@@ -23,7 +23,7 @@ import {
   sumTxRevenue,
   txKey,
 } from "@/lib/pos-transactions";
-import { pragueDate, type RangePreset } from "@/lib/turnover-utils";
+import { pragueDate, type RangePreset, formatDisplayDate, formatDisplayDateRange } from "@/lib/turnover-utils";
 import { summarizeCapability } from "@/lib/app-capabilities";
 import { AppCapabilityNotice } from "@/components/app-capability-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -301,11 +301,12 @@ export function PosLiveTransactions({
     dayFrom === dayTo
       ? dayFrom === today
         ? "Dnešní tržby"
-        : `Tržby · ${dayFrom}`
-      : `Tržby · ${dayFrom} – ${dayTo}`;
+        : `Tržby · ${formatDisplayDate(dayFrom)}`
+      : `Tržby · ${formatDisplayDateRange(dayFrom, dayTo)}`;
 
-  const earnedLabel =
-    isSingleToday ? "Vyděláno dnes" : `Tržby · ${PRESET_LABEL[rangePreset].toLowerCase()}`;
+  const earnedLabel = isSingleToday
+    ? "Vyděláno dnes"
+    : `Tržby · ${formatDisplayDateRange(dayFrom, dayTo)}`;
 
   if (!lockLicense && !effectiveLicense) {
     return (
@@ -547,8 +548,16 @@ export function PosLiveTransactions({
                         <span className="font-medium tabular-nums">
                           {formatTxTime(tx.created_at)}
                         </span>
-                        <Badge variant="outline" className="text-[10px] font-normal">
-                          {branch?.code || `#${tx.branch_id}`}
+                        <Badge
+                          variant="secondary"
+                          className="text-xs sm:text-sm font-semibold px-2.5 py-1 gap-1.5"
+                        >
+                          <span>{branch?.code || `#${tx.branch_id}`}</span>
+                          {branch?.name ? (
+                            <span className="font-normal text-muted-foreground">
+                              · {branch.name}
+                            </span>
+                          ) : null}
                         </Badge>
                         <span className="text-xs text-muted-foreground">
                           {formatPaymentLabel(tx.payment_method)}

@@ -91,6 +91,58 @@ export function pragueDate(d: Date): string {
   }).format(d);
 }
 
+/**
+ * User-facing date: D.M.YYYY (e.g. 16.7.2026).
+ * Accepts YYYY-MM-DD, ISO, or datetime strings.
+ */
+export function formatDisplayDate(raw: string | null | undefined): string {
+  if (raw == null || String(raw).trim() === "") return "—";
+  const day =
+    normalizeCloseDate(raw) ||
+    ( /^\d{4}-\d{2}-\d{2}/.test(String(raw).trim())
+      ? String(raw).trim().slice(0, 10)
+      : null);
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return String(raw);
+  const [y, m, d] = day.split("-");
+  return `${Number(d)}.${Number(m)}.${y}`;
+}
+
+/** Range as D.M.YYYY or D.M.YYYY – D.M.YYYY */
+export function formatDisplayDateRange(
+  from: string | null | undefined,
+  to?: string | null | undefined
+): string {
+  const a = formatDisplayDate(from);
+  if (to == null || to === from || !String(to).trim()) return a;
+  const b = formatDisplayDate(to);
+  if (a === "—" && b === "—") return "—";
+  if (a === b) return a;
+  return `${a} – ${b}`;
+}
+
+/** Date+time for uploads etc.: 16.7.2026 14:32 */
+export function formatDisplayDateTime(raw: string | null | undefined): string {
+  if (raw == null || String(raw).trim() === "") return "—";
+  const s = String(raw).trim();
+  const day = formatDisplayDate(s);
+  let time = "";
+  const m = s.match(/(\d{2}):(\d{2})/);
+  if (m) time = `${m[1]}:${m[2]}`;
+  else {
+    try {
+      time = new Intl.DateTimeFormat("cs-CZ", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Europe/Prague",
+      }).format(new Date(s));
+    } catch {
+      time = "";
+    }
+  }
+  if (day === "—" && !time) return "—";
+  return time ? `${day} ${time}` : day;
+}
+
 /** Normalize to YYYY-MM-DD. Prefers canonical POS stamp date part. */
 export function normalizeCloseDate(raw: string | null | undefined): string | null {
   if (!raw) return null;

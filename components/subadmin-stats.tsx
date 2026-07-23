@@ -9,7 +9,7 @@ import { PosLiveTransactions, type PosRangeValue } from "@/components/pos-live-t
 import { TurnoverCharts } from "@/components/turnover-charts";
 import { DayReconcilePanel } from "@/components/day-reconcile-panel";
 import { SubadminAppDownload } from "@/components/subadmin-app-download";
-import { pragueDate } from "@/lib/turnover-utils";
+import { formatDisplayDate, pragueDate } from "@/lib/turnover-utils";
 
 interface SubadminStatsProps {
   licenseKey: string;
@@ -150,7 +150,7 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {new Date(backup.uploaded_at).toLocaleDateString("cs-CZ")}
+                    {formatDisplayDate(backup.uploaded_at)}
                   </div>
                 </div>
               ))}
