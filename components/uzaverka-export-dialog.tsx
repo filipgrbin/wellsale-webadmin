@@ -50,7 +50,7 @@ const OPTIONS: Array<{
   {
     kind: "evidence",
     title: "Evidenční kniha (Excel)",
-    description: "Denní evidence PML podle šablony z pokladny (2 listy).",
+    description: "Denní deník PML 1:1 s pokladnou — každý příjem/prodej zvlášť, země a dodací list.",
     fileHint: "evidence-YYYY-MM-DD.xlsx",
     icon: BookOpen,
   },

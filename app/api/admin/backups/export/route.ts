@@ -110,15 +110,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // evidence
-    const templatePath = path.join(
-      process.cwd(),
-      "public",
-      "templates",
-      "evidence-daily.xlsx"
-    );
-    const template = await fs.readFile(templatePath);
-    const evidence = await buildDailyEvidenceExcelBuffer(source, template);
+    // evidence — denní deník 1:1 s POS (bez šablony)
+    const evidence = await buildDailyEvidenceExcelBuffer(source);
     return new NextResponse(new Uint8Array(evidence), {
       status: 200,
       headers: {

@@ -40,6 +40,7 @@ export type CloseSupplier = {
   name?: string;
   address?: string;
   ic?: string;
+  country?: string;
 };
 
 export type CloseStockMovement = {
@@ -50,6 +51,7 @@ export type CloseStockMovement = {
   kind?: string;
   created_at?: string;
   transaction_id?: number | null;
+  /** Číslo dodacího listu / dokladu zadané při příjmu (1:1 z POS). */
   document_number?: string | null;
   batch_number?: string | null;
   batch_document?: string | null;
@@ -58,12 +60,16 @@ export type CloseStockMovement = {
   supplier_name?: string | null;
   supplier_address?: string | null;
   supplier_ic?: string | null;
+  supplier_country?: string | null;
+  user_name?: string | null;
 };
 
 export type CloseExportSettings = {
   shop_location?: string;
+  shop_address?: string;
   ico?: string;
   receipt_prefix?: string;
+  supplier_country?: string;
 };
 
 export type CloseExportSource = {

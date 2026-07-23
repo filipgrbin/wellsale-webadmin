@@ -145,6 +145,8 @@ export async function extractCloseExportSource(
           supplier_name: obj.supplier_name == null ? null : String(obj.supplier_name),
           supplier_address: obj.supplier_address == null ? null : String(obj.supplier_address),
           supplier_ic: obj.supplier_ic == null ? null : String(obj.supplier_ic),
+          supplier_country: obj.supplier_country == null ? null : String(obj.supplier_country),
+          user_name: obj.user_name == null ? null : String(obj.user_name),
         });
       }
     }
@@ -220,6 +222,7 @@ export async function extractCloseExportSource(
             name: String(s.name || ""),
             address: s.address == null ? undefined : String(s.address),
             ic: s.ic == null ? undefined : String(s.ic),
+            country: s.country == null ? undefined : String(s.country),
           });
         }
       } catch {
