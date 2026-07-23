@@ -48,7 +48,7 @@ export function LicenseDetail({ license, onBack }: LicenseDetailProps) {
   const [activeTab, setActiveTab] = useState("branches");
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
 
-  const { data: branchesData } = useSWR(
+  const { data: branchesData, mutate: mutateBranches } = useSWR(
     ["branches", license.license_key, false],
     () => getBranches(license.license_key)
   );
@@ -70,7 +70,16 @@ export function LicenseDetail({ license, onBack }: LicenseDetailProps) {
   };
 
   if (selectedBranch) {
-    return <AdminBranchDetail branch={selectedBranch} onBack={() => setSelectedBranch(null)} />;
+    return (
+      <AdminBranchDetail
+        branch={selectedBranch}
+        onBack={() => setSelectedBranch(null)}
+        onBranchUpdated={(b) => {
+          setSelectedBranch(b);
+          void mutateBranches();
+        }}
+      />
+    );
   }
 
   return (

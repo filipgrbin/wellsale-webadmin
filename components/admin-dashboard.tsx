@@ -156,7 +156,11 @@ export default function AdminDashboard() {
 
           <TabsContent value="branches" className="m-0">
             {selectedBranch ? (
-              <AdminBranchDetail branch={selectedBranch} onBack={() => setSelectedBranch(null)} />
+              <AdminBranchDetail
+                branch={selectedBranch}
+                onBack={() => setSelectedBranch(null)}
+                onBranchUpdated={setSelectedBranch}
+              />
             ) : (
               <div className="space-y-4">
                 <div>

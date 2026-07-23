@@ -29,11 +29,23 @@ export function releaseHasWebDownloadTag(notes: string | null | undefined): bool
  * Does NOT require `active` — so a full 100% build can stay downloadable
  * while a newer build rolls out at 50% via auto-update.
  * Among matches, highest semver wins.
+ *
+ * If `forceVersion` is set (branches.update_force_version), that release wins
+ * when it exists in the list — no [DOWN] / rollout checks.
  */
 export function pickWebDownloadRelease(
-  releases: AppRelease[] | null | undefined
+  releases: AppRelease[] | null | undefined,
+  forceVersion?: string | null
 ): AppRelease | null {
-  const candidates = (releases ?? []).filter((r) => {
+  const list = releases ?? [];
+  const pinned = String(forceVersion || "").trim();
+  if (pinned) {
+    const hit = list.find((r) => String(r.version) === pinned);
+    if (hit) return hit;
+    return null;
+  }
+
+  const candidates = list.filter((r) => {
     if (!releaseHasWebDownloadTag(r.release_notes)) return false;
     if (Number(r.rollout_percent) < 100) return false;
     const ch = String(r.channel || "stable").toLowerCase();

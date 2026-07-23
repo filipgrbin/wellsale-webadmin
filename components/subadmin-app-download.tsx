@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { getReleases } from "@/lib/api";
+import { getBranches, getReleases } from "@/lib/api";
 import { pickWebDownloadRelease } from "@/lib/release-download";
 import { downloadReleaseSetup } from "@/lib/download-release";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Download, Loader2, Package } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,12 +51,38 @@ const REQUIREMENTS: Array<{ label: string; min: string; rec: string }> = [
   },
 ];
 
-export function SubadminAppDownload() {
+interface SubadminAppDownloadProps {
+  licenseKey: string;
+}
+
+export function SubadminAppDownload({ licenseKey }: SubadminAppDownloadProps) {
   const { data, isLoading, error } = useSWR("subadmin-releases", getReleases, {
     revalidateOnFocus: false,
     dedupingInterval: 60_000,
   });
-  const release = pickWebDownloadRelease(data?.releases);
+  const { data: branchesData } = useSWR(
+    ["subadmin-download-branches", licenseKey],
+    () => getBranches(licenseKey),
+    { revalidateOnFocus: false }
+  );
+
+  const branches = useMemo(
+    () => (branchesData?.branches || []).filter((b) => !b.archived_at),
+    [branchesData]
+  );
+
+  const [branchId, setBranchId] = useState<string>("");
+  useEffect(() => {
+    if (!branches.length) return;
+    setBranchId((prev) => {
+      if (prev && branches.some((b) => String(b.id) === prev)) return prev;
+      return String(branches[0].id);
+    });
+  }, [branches]);
+
+  const selectedBranch = branches.find((b) => String(b.id) === branchId) || null;
+  const forceVersion = selectedBranch?.update_force_version || null;
+  const release = pickWebDownloadRelease(data?.releases, forceVersion);
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = async () => {
@@ -66,6 +99,8 @@ export function SubadminAppDownload() {
     }
   };
 
+  const pinnedMissing = Boolean(forceVersion) && !release;
+
   return (
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
@@ -81,7 +116,7 @@ export function SubadminAppDownload() {
           </div>
           <Button
             onClick={() => void handleDownload()}
-            disabled={!release || downloading || isLoading}
+            disabled={!release || downloading || isLoading || pinnedMissing}
             className="gap-2 shrink-0"
           >
             {downloading || isLoading ? (
@@ -99,6 +134,26 @@ export function SubadminAppDownload() {
             Nepodařilo se načíst dostupné verze.
           </p>
         )}
+
+        {branches.length > 0 && (
+          <div className="space-y-2 max-w-sm">
+            <p className="text-sm text-muted-foreground">Pobočka</p>
+            <Select value={branchId} onValueChange={setBranchId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Vyberte pobočku" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>
+                    {b.code ? `${b.code} — ${b.name}` : b.name}
+                    {b.update_force_version ? ` → ${b.update_force_version}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {!error && isLoading && (
           <p className="text-sm text-muted-foreground">Zjišťuji verzi…</p>
         )}
@@ -108,9 +163,19 @@ export function SubadminAppDownload() {
             <span className="font-mono font-semibold text-foreground">
               {release.version}
             </span>
+            {forceVersion ? (
+              <span className="ml-2 text-xs">(vynucená pro pobočku)</span>
+            ) : (
+              <span className="ml-2 text-xs">(webová nabídka)</span>
+            )}
           </p>
         )}
-        {!error && !isLoading && !release && (
+        {!error && !isLoading && pinnedMissing && (
+          <p className="text-sm text-destructive">
+            Pro pobočku je nastavená verze {forceVersion}, ale v releases chybí.
+          </p>
+        )}
+        {!error && !isLoading && !release && !pinnedMissing && (
           <p className="text-sm text-muted-foreground">
             Momentálně není k dispozici žádná verze ke stažení. Zkuste to později.
           </p>

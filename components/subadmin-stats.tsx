@@ -54,7 +54,7 @@ export function SubadminStats({ licenseKey }: SubadminStatsProps) {
 
   return (
     <div className="space-y-6">
-      <SubadminAppDownload />
+      <SubadminAppDownload licenseKey={licenseKey} />
 
       <PosLiveTransactions
         licenseKey={licenseKey}

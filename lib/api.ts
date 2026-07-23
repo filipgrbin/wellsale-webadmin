@@ -74,6 +74,10 @@ export interface Branch {
   hwid_bound_at: string | null;
   app_version: string | null;
   app_version_seen_at: string | null;
+  /** stable | beta | blocked — auto-update channel */
+  update_channel?: string | null;
+  /** Pin Setup.exe / auto-update to this version; null = use global web/[DOWN] + rollout */
+  update_force_version?: string | null;
   backups_count?: number;
   machines_count?: number;
 }
@@ -182,6 +186,8 @@ export async function updateBranch(
     secret: string;
     ico: string | null;
     dic: string | null;
+    update_channel: string | null;
+    update_force_version: string | null;
   }>
 ): Promise<{ ok: boolean; branch: Branch }> {
   return apiRequest("/api/admin/branches/update", {

@@ -1,18 +1,20 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import useSWR from "swr";
 import {
   getBackups,
   deleteBackup,
   getBranchDbKey,
   getMachines,
+  getReleases,
+  updateBranch,
   type Branch,
   type Backup,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -32,6 +34,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ArrowLeft,
   Building2,
   KeyRound,
@@ -46,9 +55,11 @@ import {
   Calendar,
   AlertTriangle,
   Smartphone,
+  Package,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
+import { toast } from "sonner";
 import { BranchFaults } from "@/components/branch-faults";
 import { DayReconcilePanel } from "@/components/day-reconcile-panel";
 
@@ -56,6 +67,10 @@ import { BackupDownloadDialog } from "@/components/backup-download-dialog";
 import { BranchAppVersion } from "@/components/branch-app-version";
 import { resolveBackupAppVersion } from "@/lib/branch-app-version";
 import { hasTillData, resolveCashierName } from "@/lib/uzaverka-meta";
+import { compareAppVersions } from "@/lib/app-capabilities";
+
+const PIN_NONE = "__none__";
+const CHANNEL_STABLE = "__stable__";
 
 function formatDate(date: string | null) {
   if (!date) return "—";
@@ -99,9 +114,19 @@ function Info({ label, value, icon }: { label: string; value: string; icon: Reac
 interface AdminBranchDetailProps {
   branch: Branch;
   onBack: () => void;
+  onBranchUpdated?: (branch: Branch) => void;
 }
 
-export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
+export function AdminBranchDetail({
+  branch: branchProp,
+  onBack,
+  onBranchUpdated,
+}: AdminBranchDetailProps) {
+  const [branch, setBranch] = useState(branchProp);
+  useEffect(() => {
+    setBranch(branchProp);
+  }, [branchProp]);
+
   const { data: backupsData, mutate: mutateBackups } = useSWR(
     ["admin-branch-backups", branch.id],
     () => getBackups({ licenseKey: branch.license_key, branchId: branch.id, limit: 200 })
@@ -110,6 +135,9 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
     ["admin-branch-machines", branch.license_key],
     () => getMachines(branch.license_key)
   );
+  const { data: releasesData } = useSWR("admin-releases-for-branch", getReleases, {
+    revalidateOnFocus: false,
+  });
 
   const [dbKey, setDbKey] = useState<string | null>(null);
   const [dbKeyVisible, setDbKeyVisible] = useState(false);
@@ -117,13 +145,40 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [downloadChoice, setDownloadChoice] = useState<Backup | null>(null);
+  const [savingPin, setSavingPin] = useState(false);
 
   const backups = backupsData?.backups || [];
   const machines = (machinesData?.machines || []).filter(
     (m) => String(m.branch_id) === String(branch.id)
   );
+  const releaseVersions = [...(releasesData?.releases || [])]
+    .map((r) => String(r.version))
+    .sort((a, b) => compareAppVersions(b, a));
+  const forceVersion = branch.update_force_version || "";
+  const channel = String(branch.update_channel || "stable").toLowerCase();
 
   const copy = (t: string) => navigator.clipboard.writeText(t);
+
+  const applyBranchPatch = async (fields: {
+    update_force_version?: string | null;
+    update_channel?: string | null;
+  }) => {
+    setSavingPin(true);
+    try {
+      const r = await updateBranch(branch.id, fields);
+      if (r?.ok && r.branch) {
+        setBranch(r.branch);
+        onBranchUpdated?.(r.branch);
+        toast.success("Nastavení verze uloženo");
+      } else {
+        toast.error("Uložení selhalo");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Uložení selhalo");
+    } finally {
+      setSavingPin(false);
+    }
+  };
 
   const loadDbKey = async () => {
     if (dbKey) {
@@ -213,6 +268,71 @@ export function AdminBranchDetail({ branch, onBack }: AdminBranchDetailProps) {
               <p className="text-sm text-muted-foreground">Verze aplikace</p>
               <BranchAppVersion version={branch.app_version} seenAt={branch.app_version_seen_at} />
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Package className="h-4 w-4" />
+            Verze ke stažení / update
+          </CardTitle>
+          <CardDescription>
+            Vynucená verze platí pro auto-update i pro stažení Setup.exe u této pobočky.
+            Bez ní platí globální webová verze ([DOWN] + 100&nbsp;%).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">Vynucená verze</p>
+            <Select
+              value={forceVersion || PIN_NONE}
+              disabled={savingPin}
+              onValueChange={(v) =>
+                void applyBranchPatch({
+                  update_force_version: v === PIN_NONE ? null : v,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Výchozí (web)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={PIN_NONE}>Výchozí (web / rollout)</SelectItem>
+                {forceVersion && !releaseVersions.includes(forceVersion) && (
+                  <SelectItem value={forceVersion}>
+                    {forceVersion} (není v releases)
+                  </SelectItem>
+                )}
+                {releaseVersions.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">Kanál aktualizací</p>
+            <Select
+              value={channel === "stable" ? CHANNEL_STABLE : channel}
+              disabled={savingPin}
+              onValueChange={(v) =>
+                void applyBranchPatch({
+                  update_channel: v === CHANNEL_STABLE ? "stable" : v,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={CHANNEL_STABLE}>stable</SelectItem>
+                <SelectItem value="beta">beta</SelectItem>
+                <SelectItem value="blocked">blocked (bez update)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
