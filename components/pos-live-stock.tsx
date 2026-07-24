@@ -39,13 +39,36 @@ import {
   Warehouse,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDisplayDateTime, pragueDate } from "@/lib/turnover-utils";
+import {
+  formatDisplayDate,
+  formatDisplayDateRange,
+  formatDisplayDateTime,
+  getEffectiveDateRange,
+  pragueDate,
+  type RangePreset,
+} from "@/lib/turnover-utils";
+
+const PRESET_LABEL: Record<RangePreset, string> = {
+  today: "Dnes",
+  week: "Poslední týden",
+  month: "Poslední měsíc",
+  custom: "Vlastní období",
+};
 
 interface PosLiveStockProps {
   licenseKey: string;
 }
 
+function movementDayKey(createdAt: string): string {
+  const at = String(createdAt || "");
+  if (/^\d{4}-\d{2}-\d{2}/.test(at)) return at.slice(0, 10);
+  const t = Date.parse(at);
+  if (Number.isFinite(t)) return pragueDate(new Date(t));
+  return "";
+}
+
 export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
+  const today = pragueDate(new Date());
   const [allBranches, setAllBranches] = useState(true);
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<number>>(new Set());
   const [movements, setMovements] = useState<PosStockMovement[]>([]);
@@ -54,6 +77,9 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
   const [error, setError] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [search, setSearch] = useState("");
+  const [rangePreset, setRangePreset] = useState<RangePreset>("today");
+  const [customFrom, setCustomFrom] = useState(today);
+  const [customTo, setCustomTo] = useState(today);
   const nextSinceRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -166,16 +192,18 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
     );
   }, [levels, search, branchMeta]);
 
-  const todayKey = pragueDate(new Date());
-  const todayMovements = useMemo(() => {
+  const { from: dayFrom, to: dayTo } = useMemo(
+    () => getEffectiveDateRange(rangePreset, customFrom, customTo),
+    [rangePreset, customFrom, customTo]
+  );
+
+  const rangeMovements = useMemo(() => {
     const q = search.trim().toLowerCase();
     return filteredMovements
       .filter((m) => {
-        const at = String(m.created_at || "");
-        // Prague calendar day match (YYYY-MM-DD prefix or pragueDate parse)
-        const day =
-          /^\d{4}-\d{2}-\d{2}/.test(at) ? at.slice(0, 10) : pragueDate(new Date(at));
-        return day === todayKey;
+        const day = movementDayKey(String(m.created_at || ""));
+        if (!day) return false;
+        return day >= dayFrom && day <= dayTo;
       })
       .filter((m) => {
         if (!q) return true;
@@ -189,7 +217,14 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
           (branch?.code || "").toLowerCase().includes(q)
         );
       });
-  }, [filteredMovements, todayKey, search, branchMeta]);
+  }, [filteredMovements, dayFrom, dayTo, search, branchMeta]);
+
+  const movementsHeadline =
+    dayFrom === dayTo
+      ? dayFrom === today
+        ? "Pohyby za dnešek"
+        : `Pohyby · ${formatDisplayDate(dayFrom)}`
+      : `Pohyby · ${formatDisplayDateRange(dayFrom, dayTo)}`;
 
   const totals = useMemo(() => {
     let known = 0;
@@ -450,13 +485,64 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Pohyby za dnešek ({todayKey})</CardTitle>
+          <CardTitle className="text-base">{movementsHeadline}</CardTitle>
           <CardDescription>
             Jednotlivé skladové pohyby — stejný filtr prodejen jako výše. ID pohybu a vazba na
             transakci.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {(["today", "week", "month", "custom"] as RangePreset[]).map((p) => (
+              <Button
+                key={p}
+                variant={rangePreset === p ? "default" : "outline"}
+                size="sm"
+                onClick={() => setRangePreset(p)}
+              >
+                {PRESET_LABEL[p]}
+              </Button>
+            ))}
+          </div>
+
+          {rangePreset === "custom" && (
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="stock-mov-from" className="text-xs">
+                  Od
+                </Label>
+                <Input
+                  id="stock-mov-from"
+                  type="date"
+                  value={customFrom}
+                  max={customTo}
+                  onChange={(e) => {
+                    setCustomFrom(e.target.value);
+                    setRangePreset("custom");
+                  }}
+                  className="w-[160px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="stock-mov-to" className="text-xs">
+                  Do
+                </Label>
+                <Input
+                  id="stock-mov-to"
+                  type="date"
+                  value={customTo}
+                  min={customFrom}
+                  max={today}
+                  onChange={(e) => {
+                    setCustomTo(e.target.value);
+                    setRangePreset("custom");
+                  }}
+                  className="w-[160px]"
+                />
+              </div>
+            </div>
+          )}
+
           {!allBranches && selectedBranchIds.size === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               Vyberte alespoň jednu prodejnu
@@ -466,9 +552,9 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
               <Loader2 className="h-4 w-4 animate-spin" />
               Načítám…
             </p>
-          ) : todayMovements.length === 0 ? (
+          ) : rangeMovements.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
-              Dnes zatím žádné pohyby ve vybraném rozsahu.
+              V tomto období žádné pohyby ve vybraném rozsahu.
             </p>
           ) : (
             <div className="rounded-lg border border-border overflow-hidden">
@@ -487,7 +573,7 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {todayMovements.map((m) => {
+                    {rangeMovements.map((m) => {
                       const branch = branchMeta.get(m.branch_id);
                       return (
                         <tr
@@ -538,8 +624,11 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
                 </table>
               </div>
               <div className="px-3 py-2 border-t border-border text-xs text-muted-foreground">
-                {todayMovements.length}{" "}
-                {todayMovements.length === 1 ? "pohyb" : "pohybů"} dnes
+                {rangeMovements.length}{" "}
+                {rangeMovements.length === 1 ? "pohyb" : "pohybů"} ·{" "}
+                {dayFrom === dayTo
+                  ? formatDisplayDate(dayFrom)
+                  : formatDisplayDateRange(dayFrom, dayTo)}
               </div>
             </div>
           )}
