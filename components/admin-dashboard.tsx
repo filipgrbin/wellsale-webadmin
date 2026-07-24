@@ -17,6 +17,7 @@ import { PosLiveTransactions } from "@/components/pos-live-transactions";
 import { AdminNotifications } from "@/components/admin-notifications";
 import { AdminReleases } from "@/components/admin-releases";
 import { Key, Building2, Monitor, LayoutDashboard, Database, LogOut, Bell, Rocket } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -42,14 +43,17 @@ export default function AdminDashboard() {
       <div className="min-h-screen bg-background">
         <header className="border-b border-border bg-card">
           <div className="container mx-auto px-4 py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded bg-primary flex items-center justify-center">
-                <Key className="h-4 w-4 text-primary-foreground" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded bg-primary flex items-center justify-center">
+                  <Key className="h-4 w-4 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold">WellSale Admin Panel</h1>
+                  <p className="text-xs text-muted-foreground">License Management</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-lg font-semibold">WellSale Admin Panel</h1>
-                <p className="text-xs text-muted-foreground">License Management</p>
-              </div>
+              <ThemeToggle />
             </div>
           </div>
         </header>
@@ -85,6 +89,7 @@ export default function AdminDashboard() {
                 <span className="text-xs text-muted-foreground">Admin Dashboard</span>
                 <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
               </div>
+              <ThemeToggle />
               <Button
                 variant="ghost"
                 size="sm"
