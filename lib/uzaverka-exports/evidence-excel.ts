@@ -7,6 +7,7 @@ import ExcelJS from "exceljs";
 import { formatReceiptNumber, localDayKey } from "@/lib/uzaverka-exports/time";
 import type { CloseExportSource, CloseStockMovement } from "@/lib/uzaverka-exports/types";
 
+/** Počet sloupců deníku — musí sedět s HEADERS. */
 const COLS = 14;
 
 function dateTimeFmtCz(iso: string): string {
@@ -150,6 +151,9 @@ export async function buildDailyEvidenceExcelBuffer(
     .join(" · ");
   ws.getCell(3, 1).value = `Datum: ${closeDate} · záznamů: ${dayMovements.length}`;
 
+  if (HEADERS.length !== COLS) {
+    throw new Error(`evidence headers length ${HEADERS.length} !== COLS ${COLS}`);
+  }
   const headerRow = ws.getRow(4);
   for (let i = 0; i < HEADERS.length; i++) {
     const cell = headerRow.getCell(i + 1);
@@ -158,7 +162,9 @@ export async function buildDailyEvidenceExcelBuffer(
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF284028" } };
     cell.alignment = { vertical: "middle", wrapText: true };
   }
-  headerRow.height = 22;
+  // Explicitně poslední sloupec — Excel někdy „schová“ úzký wrapText header
+  headerRow.getCell(COLS).value = "Interní ID pohybu";
+  headerRow.height = 28;
   headerRow.commit();
 
   let r = 5;
@@ -252,7 +258,7 @@ export async function buildDailyEvidenceExcelBuffer(
     { width: 12 },
     { width: 12 },
     { width: 14 },
-    { width: 16 },
+    { width: 18 }, // Interní ID pohybu
   ];
 
   const buf = await wb.xlsx.writeBuffer();

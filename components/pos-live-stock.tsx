@@ -69,7 +69,8 @@ function movementDayKey(createdAt: string): string {
 
 export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
   const today = pragueDate(new Date());
-  const [allBranches, setAllBranches] = useState(true);
+  // Default: jedna prodejna (ne „všechny“) — méně matoucí u skladu.
+  const [allBranches, setAllBranches] = useState(false);
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<number>>(new Set());
   const [movements, setMovements] = useState<PosStockMovement[]>([]);
   const [nextSince, setNextSince] = useState<string | null>(null);
@@ -82,6 +83,7 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
   const [customTo, setCustomTo] = useState(today);
   const nextSinceRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const defaultBranchInitRef = useRef(false);
 
   useEffect(() => {
     nextSinceRef.current = nextSince;
@@ -96,6 +98,15 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
     () => (branchesData?.branches ?? []).filter((b) => !b.archived_at),
     [branchesData]
   );
+
+  // Po načtení prodejen zvolit první (pokud uživatel ještě nic nevybral).
+  useEffect(() => {
+    if (defaultBranchInitRef.current) return;
+    if (availableBranches.length === 0) return;
+    defaultBranchInitRef.current = true;
+    setAllBranches(false);
+    setSelectedBranchIds(new Set([availableBranches[0].id]));
+  }, [availableBranches]);
 
   const stockCap = useMemo(
     () => summarizeCapability(availableBranches, "liveStockMovements"),
@@ -114,13 +125,16 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
   }, [allBranches, selectedBranchIds]);
 
   const scope = useMemo(() => {
+    // Než doběhne defaultní výběr první prodejny — nic nenačítej
+    if (!allBranches && selectedBranchIds.size === 0) return null;
     if (activeBranchIds && activeBranchIds.length === 1) {
       return { branchId: activeBranchIds[0] };
     }
     return { licenseKey };
-  }, [licenseKey, activeBranchIds]);
+  }, [licenseKey, activeBranchIds, allBranches, selectedBranchIds.size]);
 
   const loadSnapshot = useCallback(async () => {
+    if (!scope) return;
     setLoading(true);
     setError(null);
     try {
@@ -139,11 +153,12 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
   useEffect(() => {
     setMovements([]);
     setNextSince(null);
-    void loadSnapshot();
-  }, [loadSnapshot]);
+    if (scope) void loadSnapshot();
+  }, [loadSnapshot, scope]);
 
   // Poll for new / updated movements
   useEffect(() => {
+    if (!scope) return;
     const tick = async () => {
       const since = nextSinceRef.current;
       if (!since) return;
@@ -241,6 +256,7 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
   }, [visibleLevels]);
 
   const toggleBranch = (id: number) => {
+    setAllBranches(false);
     setSelectedBranchIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -249,11 +265,16 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
     });
   };
 
-  const branchPickerLabel = allBranches
-    ? "Všechny prodejny"
-    : selectedBranchIds.size === 0
-      ? "Vyberte prodejny"
-      : `${selectedBranchIds.size} prodejen`;
+  const branchPickerLabel = useMemo(() => {
+    if (allBranches) return "Všechny prodejny";
+    if (selectedBranchIds.size === 0) return "Vyberte prodejny";
+    if (selectedBranchIds.size === 1) {
+      const id = [...selectedBranchIds][0];
+      const b = branchMeta.get(id);
+      return b ? `${b.code} — ${b.name}` : `Prodejna #${id}`;
+    }
+    return `${selectedBranchIds.size} prodejen`;
+  }, [allBranches, selectedBranchIds, branchMeta]);
 
   return (
     <div className="space-y-4">
@@ -264,17 +285,16 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
             Sklad
           </h2>
           <p className="text-muted-foreground">
-            Aktuální stav skladu na prodejnách
-
+            Stav skladu a pohyby podle vybrané prodejny
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="justify-between gap-2">
+              <Button variant="outline" size="sm" className="justify-between gap-2 max-w-[280px]">
                 <Store className="h-4 w-4 shrink-0" />
-                {branchPickerLabel}
-                <ChevronDown className="h-4 w-4 opacity-50" />
+                <span className="truncate">{branchPickerLabel}</span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-72 p-3" align="end">
@@ -284,8 +304,16 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
                     id="stock-all-branches"
                     checked={allBranches}
                     onCheckedChange={(c) => {
-                      setAllBranches(c === true);
-                      if (c) setSelectedBranchIds(new Set());
+                      if (c === true) {
+                        setAllBranches(true);
+                        setSelectedBranchIds(new Set());
+                        return;
+                      }
+                      setAllBranches(false);
+                      // Při vypnutí „všechny“ nechat aspoň první prodejnu
+                      if (selectedBranchIds.size === 0 && availableBranches[0]) {
+                        setSelectedBranchIds(new Set([availableBranches[0].id]));
+                      }
                     }}
                   />
                   <Label htmlFor="stock-all-branches" className="cursor-pointer font-medium">
