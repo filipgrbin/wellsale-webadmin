@@ -1,11 +1,13 @@
 /**
  * 1:1 port of easytill2/src/lib/evidenceExcel.ts —
- * Denní evidenční kniha = DETAILNÍ deník (1 pohyb = 1 řádek).
+ * Denní evidenční kniha = DETAILNÍ deník (1 pohyb = 1 řádek) z .wsbak uzávěrky.
  */
 
 import ExcelJS from "exceljs";
 import { formatReceiptNumber, localDayKey } from "@/lib/uzaverka-exports/time";
 import type { CloseExportSource, CloseStockMovement } from "@/lib/uzaverka-exports/types";
+
+const COLS = 14;
 
 function dateTimeFmtCz(iso: string): string {
   if (!iso) return "";
@@ -24,7 +26,12 @@ function productLabel(
   m?: CloseStockMovement
 ): string {
   const name = m?.product_name || p?.name || "";
-  return [name, p?.subtype, p?.form, p?.package_size]
+  return [
+    name,
+    m?.subtype ?? p?.subtype,
+    m?.form ?? p?.form,
+    m?.package_size ?? p?.package_size,
+  ]
     .filter(Boolean)
     .join(" ")
     .replace(/\s+/g, " ")
@@ -49,6 +56,22 @@ function movementDoc(m: CloseStockMovement, prefix?: string | null): string {
   return "";
 }
 
+function isIncome(m: CloseStockMovement): boolean {
+  const kind = String(m.kind || "").toLowerCase();
+  if (kind === "in" || kind.includes("prijem") || kind.includes("recv") || kind.includes("delivery")) {
+    return true;
+  }
+  return Number(m.delta) > 0;
+}
+
+function isSaleOrOut(m: CloseStockMovement): boolean {
+  const kind = String(m.kind || "").toLowerCase();
+  if (kind === "sale" || kind === "out" || kind.includes("prodej") || kind.includes("vydej")) {
+    return true;
+  }
+  return Number(m.delta) < 0;
+}
+
 const HEADERS = [
   "Č.",
   "Datum a čas",
@@ -66,6 +89,23 @@ const HEADERS = [
   "Interní ID pohybu",
 ] as const;
 
+const FILL_IN: ExcelJS.Fill = {
+  type: "pattern",
+  pattern: "solid",
+  fgColor: { argb: "FFEAF6EA" },
+};
+const FILL_OUT: ExcelJS.Fill = {
+  type: "pattern",
+  pattern: "solid",
+  fgColor: { argb: "FFFFF4E8" },
+};
+
+function paintRow(row: ExcelJS.Row, fill: ExcelJS.Fill) {
+  for (let c = 1; c <= COLS; c++) {
+    row.getCell(c).fill = fill;
+  }
+}
+
 export async function buildDailyEvidenceExcelBuffer(
   source: CloseExportSource
 ): Promise<ArrayBuffer> {
@@ -80,6 +120,7 @@ export async function buildDailyEvidenceExcelBuffer(
   const shop = settings.shop_location || "WellSale";
   const ico = settings.ico || "";
 
+  // extractCloseExportSource už filtruje den — tady jen pojistka + sort
   const dayMovements = [...movements]
     .filter((m) => {
       const at = String(m.created_at || "");
@@ -110,22 +151,25 @@ export async function buildDailyEvidenceExcelBuffer(
   ws.getCell(3, 1).value = `Datum: ${closeDate} · záznamů: ${dayMovements.length}`;
 
   const headerRow = ws.getRow(4);
-  HEADERS.forEach((h, i) => {
+  for (let i = 0; i < HEADERS.length; i++) {
     const cell = headerRow.getCell(i + 1);
-    cell.value = h;
+    cell.value = HEADERS[i];
     cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 9 };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF284028" } };
     cell.alignment = { vertical: "middle", wrapText: true };
-  });
+  }
   headerRow.height = 22;
+  headerRow.commit();
 
   let r = 5;
   let n = 0;
   for (const m of dayMovements) {
     n += 1;
     const product = productMap.get(m.product_id) ?? null;
-    const isIn = m.kind === "in" || Number(m.delta) > 0;
-    const sarze = String(m.batch_number || product?.lot_number || "").trim();
+    const income = isIncome(m);
+    const sarze = String(
+      m.batch_number || product?.lot_number || ""
+    ).trim();
 
     const catalogSup =
       product?.supplier_id != null
@@ -151,11 +195,15 @@ export async function buildDailyEvidenceExcelBuffer(
       ""
     ).trim();
 
+    const typ =
+      KIND_LABEL[String(m.kind || "").toLowerCase()] ||
+      (income ? "Příjem" : isSaleOrOut(m) ? "Výdej" : String(m.kind || "Pohyb"));
+
     const row = ws.getRow(r);
     const values: ExcelJS.CellValue[] = [
       n,
       dateTimeFmtCz(String(m.created_at || "")),
-      KIND_LABEL[m.kind || ""] || (isIn ? "Příjem" : "Výdej"),
+      typ,
       productLabel(product, m),
       sarze,
       movementDoc(m, prefix),
@@ -166,26 +214,22 @@ export async function buildDailyEvidenceExcelBuffer(
       Number(m.delta) || 0,
       m.stock_after != null ? Number(m.stock_after) : "",
       m.user_name || "",
-      m.id != null ? Number(m.id) : "",
+      m.id != null && Number.isFinite(Number(m.id)) ? Number(m.id) : "",
     ];
-    values.forEach((v, i) => {
+
+    for (let i = 0; i < COLS; i++) {
       const cell = row.getCell(i + 1);
-      cell.value = v;
+      cell.value = values[i];
       cell.font = { size: 9 };
       cell.alignment = { vertical: "middle", wrapText: i === 3 || i === 7 };
       if (i === 10 || i === 11) {
         cell.alignment = { vertical: "middle", horizontal: "right" };
       }
-    });
-    if (isIn) {
-      row.eachCell({ includeEmpty: true }, (cell) => {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF6EA" } };
-      });
-    } else if (m.kind === "sale" || m.kind === "out" || Number(m.delta) < 0) {
-      row.eachCell({ includeEmpty: true }, (cell) => {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF4E8" } };
-      });
     }
+
+    if (income) paintRow(row, FILL_IN);
+    else if (isSaleOrOut(m)) paintRow(row, FILL_OUT);
+
     row.commit();
     r += 1;
   }
@@ -208,7 +252,7 @@ export async function buildDailyEvidenceExcelBuffer(
     { width: 12 },
     { width: 12 },
     { width: 14 },
-    { width: 14 },
+    { width: 16 },
   ];
 
   const buf = await wb.xlsx.writeBuffer();

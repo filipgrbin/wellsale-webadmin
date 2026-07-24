@@ -62,6 +62,10 @@ export type CloseStockMovement = {
   supplier_ic?: string | null;
   supplier_country?: string | null;
   user_name?: string | null;
+  /** Z products JOIN v .wsbak (pro label / šarži u příjmu). */
+  subtype?: string | null;
+  form?: string | null;
+  package_size?: string | null;
 };
 
 export type CloseExportSettings = {

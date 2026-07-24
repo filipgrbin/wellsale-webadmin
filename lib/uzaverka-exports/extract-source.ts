@@ -1,5 +1,7 @@
 /**
- * Extract close-export source from decrypted uzaverka SQLite (closeSnapshot layout).
+ * Extract close-export source from decrypted uzaverka SQLite (.wsbak → plain .db).
+ * Enrich movements the same way POS listStockMovements does (JOIN products/batches/suppliers/users)
+ * whenever those tables exist in the snapshot.
  */
 
 import type {
@@ -12,6 +14,21 @@ import type {
   CloseTxItem,
 } from "@/lib/uzaverka-exports/types";
 import { localDayKey } from "@/lib/uzaverka-exports/time";
+
+function tableColumns(db: { prepare: (sql: string) => { all: () => unknown[] } }, table: string): Set<string> {
+  try {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as { name?: string }[];
+    return new Set(rows.map((r) => String(r.name || "").toLowerCase()).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function str(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s ? s : null;
+}
 
 export async function extractCloseExportSource(
   sqliteBuffer: Buffer,
@@ -33,9 +50,10 @@ export async function extractCloseExportSource(
     const tables = (
       db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
     ).map((r) => r.name.toLowerCase());
+    const has = (t: string) => tables.includes(t);
 
     let close: CloseDaily | null = null;
-    if (tables.includes("daily_closes")) {
+    if (has("daily_closes")) {
       const row = db
         .prepare("SELECT * FROM daily_closes ORDER BY rowid DESC LIMIT 1")
         .get() as Record<string, unknown> | undefined;
@@ -56,12 +74,11 @@ export async function extractCloseExportSource(
     const closeDate = close.close_date;
 
     const itemsByTx = new Map<number, CloseTxItem[]>();
-    /** detail_snapshot z položek — fallback pro form / balení / šarži když chybí products. */
     const detailByProductId = new Map<
       number,
       { form?: string; package_size?: string; lot_number?: string }
     >();
-    if (tables.includes("transaction_items")) {
+    if (has("transaction_items")) {
       const itemRows = db
         .prepare("SELECT * FROM transaction_items")
         .all() as Record<string, unknown>[];
@@ -97,7 +114,7 @@ export async function extractCloseExportSource(
     }
 
     const transactions: CloseTransaction[] = [];
-    if (tables.includes("transactions")) {
+    if (has("transactions")) {
       const txRows = db
         .prepare("SELECT * FROM transactions ORDER BY id ASC")
         .all() as Record<string, unknown>[];
@@ -123,36 +140,135 @@ export async function extractCloseExportSource(
       }
     }
 
+    // ── stock_movements — JOIN jako POS listStockMovements, jen z tabulek v .wsbak ──
     const dayMovements: CloseStockMovement[] = [];
-    if (tables.includes("stock_movements")) {
-      const smRows = db
-        .prepare("SELECT * FROM stock_movements ORDER BY id ASC")
-        .all() as Record<string, unknown>[];
+    if (has("stock_movements")) {
+      const smCols = tableColumns(db, "stock_movements");
+      const joinProducts = has("products");
+      const joinBatches = has("batches");
+      const joinSuppliers = has("suppliers");
+      const joinUsers = has("users");
+
+      const selectParts = ["sm.*"];
+      if (joinProducts) {
+        selectParts.push(
+          "p.subtype AS _subtype",
+          "p.form AS _form",
+          "p.package_size AS _package_size",
+          "p.lot_number AS _product_lot",
+          "p.supplier_id AS _product_supplier_id"
+        );
+      }
+      if (joinBatches) {
+        selectParts.push("b.batch_number AS _batch_number", "b.document_number AS _batch_document");
+        if (joinSuppliers) {
+          selectParts.push(
+            "s.name AS _batch_sup_name",
+            "s.address AS _batch_sup_address",
+            "s.ic AS _batch_sup_ic",
+            "s.country AS _batch_sup_country"
+          );
+        }
+      }
+      if (joinProducts && joinSuppliers) {
+        selectParts.push(
+          "ps.name AS _prod_sup_name",
+          "ps.address AS _prod_sup_address",
+          "ps.ic AS _prod_sup_ic",
+          "ps.country AS _prod_sup_country"
+        );
+      }
+      if (joinUsers) {
+        selectParts.push("u.name AS _user_name");
+      }
+
+      let sql = `SELECT ${selectParts.join(",\n          ")} FROM stock_movements sm`;
+      if (joinProducts) sql += " LEFT JOIN products p ON p.id = sm.product_id";
+      if (joinBatches) sql += " LEFT JOIN batches b ON b.id = sm.batch_id";
+      if (joinBatches && joinSuppliers) sql += " LEFT JOIN suppliers s ON s.id = b.supplier_id";
+      if (joinProducts && joinSuppliers) {
+        sql += " LEFT JOIN suppliers ps ON ps.id = p.supplier_id";
+      }
+      if (joinUsers) sql += " LEFT JOIN users u ON u.id = sm.user_id";
+
+      // Soft-delete — jen když sloupec existuje
+      if (smCols.has("deleted_at")) {
+        sql += " WHERE (sm.deleted_at IS NULL OR sm.deleted_at = '')";
+      }
+      sql += " ORDER BY sm.id ASC";
+
+      const smRows = db.prepare(sql).all() as Record<string, unknown>[];
       for (const obj of smRows) {
+        const created = String(obj.created_at || "");
+        // Snapshot uzávěrky je typicky už jen ten den — přesto filtruj, kdyby šlo o plnější DB.
+        if (created) {
+          const dayMatch =
+            localDayKey(created) === closeDate ||
+            created.startsWith(closeDate) ||
+            created.includes(closeDate);
+          if (!dayMatch) continue;
+        }
+
+        const batchNumber =
+          str(obj.batch_number) ||
+          str(obj._batch_number) ||
+          str(obj._product_lot) ||
+          null;
+        const batchDocument =
+          str(obj.batch_document) ||
+          str(obj._batch_document) ||
+          str(obj.batch_doc_number) ||
+          null;
+
+        const supplierName =
+          str(obj.supplier_name) ||
+          str(obj._batch_sup_name) ||
+          str(obj._prod_sup_name) ||
+          null;
+        const supplierAddress =
+          str(obj.supplier_address) ||
+          str(obj._batch_sup_address) ||
+          str(obj._prod_sup_address) ||
+          null;
+        const supplierIc =
+          str(obj.supplier_ic) ||
+          str(obj._batch_sup_ic) ||
+          str(obj._prod_sup_ic) ||
+          null;
+        const supplierCountry =
+          str(obj.supplier_country) ||
+          str(obj._batch_sup_country) ||
+          str(obj._prod_sup_country) ||
+          null;
+
+        const userName = str(obj.user_name) || str(obj._user_name) || null;
+
         dayMovements.push({
           id: Number(obj.id || 0),
           product_id: Number(obj.product_id || 0),
           product_name: String(obj.product_name || ""),
           delta: Number(obj.delta || 0),
           kind: String(obj.kind || ""),
-          created_at: String(obj.created_at || ""),
+          created_at: created,
           transaction_id: obj.transaction_id == null ? null : Number(obj.transaction_id),
-          document_number: obj.document_number == null ? null : String(obj.document_number),
-          batch_number: obj.batch_number == null ? null : String(obj.batch_number),
-          batch_document: obj.batch_document == null ? null : String(obj.batch_document),
-          batch_doc_number: obj.batch_doc_number == null ? null : String(obj.batch_doc_number),
+          document_number: str(obj.document_number),
+          batch_number: batchNumber,
+          batch_document: batchDocument,
+          batch_doc_number: str(obj.batch_doc_number),
           stock_after: obj.stock_after == null ? null : Number(obj.stock_after),
-          supplier_name: obj.supplier_name == null ? null : String(obj.supplier_name),
-          supplier_address: obj.supplier_address == null ? null : String(obj.supplier_address),
-          supplier_ic: obj.supplier_ic == null ? null : String(obj.supplier_ic),
-          supplier_country: obj.supplier_country == null ? null : String(obj.supplier_country),
-          user_name: obj.user_name == null ? null : String(obj.user_name),
+          supplier_name: supplierName,
+          supplier_address: supplierAddress,
+          supplier_ic: supplierIc,
+          supplier_country: supplierCountry,
+          user_name: userName,
+          subtype: str(obj._subtype) ?? str(obj.subtype),
+          form: str(obj._form) ?? str(obj.form),
+          package_size: str(obj._package_size) ?? str(obj.package_size),
         });
       }
     }
 
-    // products — only from this .wsbak (no live API).
-    // Unique (product_id, product_name) so a mid-day rename keeps both names.
+    // products katalog z .wsbak
     const products: CloseProduct[] = [];
     const seen = new Set<string>();
     for (const m of dayMovements) {
@@ -164,12 +280,15 @@ export async function extractCloseExportSource(
       products.push({
         id: m.product_id,
         name: name || `Produkt #${m.product_id}`,
+        subtype: m.subtype ?? null,
+        form: m.form ?? null,
+        package_size: m.package_size ?? null,
         lot_number: m.batch_number || null,
       });
     }
-    // Catalog from snapshot (new closes) + detail_snapshot fallback
+
     const catalogById = new Map<number, Record<string, unknown>>();
-    if (tables.includes("products")) {
+    if (has("products")) {
       try {
         const prodRows = db.prepare("SELECT * FROM products").all() as Record<string, unknown>[];
         for (const row of prodRows) {
@@ -212,8 +331,29 @@ export async function extractCloseExportSource(
       }
     }
 
+    // Doplň šarži na pohyby z katalogu (příjem nemá batch — šarže = products.lot_number)
+    for (const m of dayMovements) {
+      if (!m.batch_number) {
+        const cat = catalogById.get(m.product_id);
+        const lot = cat?.lot_number != null ? String(cat.lot_number).trim() : "";
+        if (lot) m.batch_number = lot;
+        else if (m.product_id) {
+          const det = detailByProductId.get(m.product_id);
+          if (det?.lot_number) m.batch_number = det.lot_number;
+        }
+      }
+      const cat = catalogById.get(m.product_id);
+      if (cat) {
+        if (!m.subtype && cat.subtype != null) m.subtype = String(cat.subtype);
+        if (!m.form && cat.form != null) m.form = String(cat.form);
+        if (!m.package_size && cat.package_size != null) {
+          m.package_size = String(cat.package_size);
+        }
+      }
+    }
+
     const suppliers: CloseExportSource["suppliers"] = [];
-    if (tables.includes("suppliers")) {
+    if (has("suppliers")) {
       try {
         const rows = db.prepare("SELECT * FROM suppliers").all() as Record<string, unknown>[];
         for (const s of rows) {
@@ -230,6 +370,27 @@ export async function extractCloseExportSource(
       }
     }
 
+    // Shop settings z .wsbak pokud existují
+    let shopLocation = settings.shop_location || "WellSale";
+    let ico = settings.ico || "";
+    let shopAddress = settings.shop_address || "";
+    let receiptPrefix = settings.receipt_prefix || "TX";
+    if (has("settings")) {
+      try {
+        const rows = db.prepare("SELECT key, value FROM settings").all() as {
+          key?: string;
+          value?: string;
+        }[];
+        const map = new Map(rows.map((r) => [String(r.key || ""), String(r.value ?? "")]));
+        if (map.get("shop_location")) shopLocation = map.get("shop_location")!;
+        if (map.get("ico")) ico = map.get("ico")!;
+        if (map.get("shop_address")) shopAddress = map.get("shop_address")!;
+        if (map.get("receipt_prefix")) receiptPrefix = map.get("receipt_prefix")!;
+      } catch {
+        /* ignore */
+      }
+    }
+
     return {
       close,
       transactions,
@@ -237,9 +398,11 @@ export async function extractCloseExportSource(
       products,
       suppliers,
       settings: {
-        shop_location: settings.shop_location || "WellSale",
-        ico: settings.ico || "",
-        receipt_prefix: settings.receipt_prefix || "TX",
+        shop_location: shopLocation,
+        shop_address: shopAddress,
+        ico,
+        receipt_prefix: receiptPrefix,
+        supplier_country: settings.supplier_country,
       },
     };
   } finally {
