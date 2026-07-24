@@ -192,7 +192,7 @@ export async function buildDailyEvidenceExcelBuffer(
       m.supplier_country ||
       fallbackSup?.country ||
       settings.supplier_country ||
-      ""
+      "ČR"
     ).trim();
 
     const typ =

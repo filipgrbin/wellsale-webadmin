@@ -148,6 +148,8 @@ export async function extractCloseExportSource(
       const joinBatches = has("batches");
       const joinSuppliers = has("suppliers");
       const joinUsers = has("users");
+      const supCols = joinSuppliers ? tableColumns(db, "suppliers") : new Set<string>();
+      const hasSupCountry = supCols.has("country");
 
       const selectParts = ["sm.*"];
       if (joinProducts) {
@@ -166,7 +168,7 @@ export async function extractCloseExportSource(
             "s.name AS _batch_sup_name",
             "s.address AS _batch_sup_address",
             "s.ic AS _batch_sup_ic",
-            "s.country AS _batch_sup_country"
+            hasSupCountry ? "s.country AS _batch_sup_country" : "NULL AS _batch_sup_country"
           );
         }
       }
@@ -175,7 +177,7 @@ export async function extractCloseExportSource(
           "ps.name AS _prod_sup_name",
           "ps.address AS _prod_sup_address",
           "ps.ic AS _prod_sup_ic",
-          "ps.country AS _prod_sup_country"
+          hasSupCountry ? "ps.country AS _prod_sup_country" : "NULL AS _prod_sup_country"
         );
       }
       if (joinUsers) {
@@ -197,7 +199,16 @@ export async function extractCloseExportSource(
       }
       sql += " ORDER BY sm.id ASC";
 
-      const smRows = db.prepare(sql).all() as Record<string, unknown>[];
+      let smRows: Record<string, unknown>[] = [];
+      try {
+        smRows = db.prepare(sql).all() as Record<string, unknown>[];
+      } catch (e) {
+        // Fallback: raw movements without joins (starší / poškozené schéma)
+        console.warn("[extractCloseExportSource] enriched SELECT failed, fallback:", e);
+        smRows = db
+          .prepare("SELECT * FROM stock_movements ORDER BY id ASC")
+          .all() as Record<string, unknown>[];
+      }
       for (const obj of smRows) {
         const created = String(obj.created_at || "");
         // Snapshot uzávěrky je typicky už jen ten den — přesto filtruj, kdyby šlo o plnější DB.
@@ -362,7 +373,10 @@ export async function extractCloseExportSource(
             name: String(s.name || ""),
             address: s.address == null ? undefined : String(s.address),
             ic: s.ic == null ? undefined : String(s.ic),
-            country: s.country == null ? undefined : String(s.country),
+            country:
+              s.country == null || s.country === undefined
+                ? undefined
+                : String(s.country),
           });
         }
       } catch {
