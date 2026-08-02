@@ -228,6 +228,7 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
           name.includes(q) ||
           String(m.local_id || "").includes(q) ||
           String(m.transaction_id || "").includes(q) ||
+          String(m.document_number || "").toLowerCase().includes(q) ||
           String(m.product_id || "").includes(q) ||
           (branch?.code || "").toLowerCase().includes(q)
         );
@@ -597,12 +598,16 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
                       <th className="px-3 py-2 font-medium text-right">Δ</th>
                       <th className="px-3 py-2 font-medium text-right">Stav po</th>
                       <th className="px-3 py-2 font-medium">ID pohybu</th>
-                      <th className="px-3 py-2 font-medium">TX id</th>
+                      <th className="px-3 py-2 font-medium">Doklad</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {rangeMovements.map((m) => {
                       const branch = branchMeta.get(m.branch_id);
+                      // Příjem = document_number (dodací list); prodej = TX id / document_number
+                      const doklad =
+                        String(m.document_number || "").trim() ||
+                        (m.transaction_id != null ? String(m.transaction_id) : "");
                       return (
                         <tr
                           key={`${m.branch_id}:${m.local_id}`}
@@ -643,7 +648,7 @@ export function PosLiveStock({ licenseKey }: PosLiveStockProps) {
                           </td>
                           <td className="px-3 py-2 font-mono text-xs">{m.local_id}</td>
                           <td className="px-3 py-2 font-mono text-xs">
-                            {m.transaction_id != null ? m.transaction_id : "—"}
+                            {doklad || "—"}
                           </td>
                         </tr>
                       );
